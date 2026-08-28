@@ -1,17 +1,18 @@
-name: My Best Deal 4.7 - iOS Compatibility
+name: My Best Deal 4.7 - RPYC Analysis
 
 on:
   workflow_dispatch:
 
 jobs:
-  check:
-    runs-on: macos-14
+  analyze:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Скачать игру
         run: |
           FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
+
           curl -L --fail --retry 5 "$URL" -o game.zip
 
       - name: Распаковать
@@ -19,93 +20,89 @@ jobs:
           mkdir -p android_game
           unzip -oq game.zip -d android_game
 
-      - name: Скачать Ren'Py SDK
-        run: |
-          curl -L --fail \
-            https://www.renpy.org/dl/8.3.7/renpy-8.3.7-sdk.zip \
-            -o renpy.zip
-
-          unzip -q renpy.zip
-
-      - name: Определить SDK
-        run: |
-          SDK="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type d -name 'renpy-*-sdk' | head -1)"
-
-          echo "SDK=$SDK" >> "$GITHUB_ENV"
-
-          echo "=== REN'PY ==="
-          "$SDK/renpy.sh" --version
-
-      - name: Определить структуру игры
+      - name: Анализировать RPYC
         run: |
           mkdir -p result
 
+          python3 <<'PY'
+          import os
+          import struct
+          import hashlib
+
+          root = "android_game"
+          files = []
+
+          for base, dirs, names in os.walk(root):
+              for name in names:
+                  if name.endswith(".rpyc"):
+                      files.append(os.path.join(base, name))
+
+          files.sort()
+
+          with open("result/rpyc-analysis.txt", "w", encoding="utf-8") as out:
+              out.write("MY BEST DEAL 4.7 - RPYC ANALYSIS\n")
+              out.write("=" * 50 + "\n\n")
+
+              out.write(f"RPYC files: {len(files)}\n\n")
+
+              for path in files:
+                  rel = os.path.relpath(path, root)
+
+                  try:
+                      data = open(path, "rb").read(128)
+
+                      sha = hashlib.sha256(
+                          open(path, "rb").read()
+                      ).hexdigest()
+
+                      out.write(f"FILE: {rel}\n")
+                      out.write(f"SIZE: {os.path.getsize(path)}\n")
+                      out.write(f"SHA256: {sha}\n")
+                      out.write(
+                          "HEADER HEX: " +
+                          data[:64].hex(" ") +
+                          "\n"
+                      )
+
+                      printable = "".join(
+                          chr(x) if 32 <= x < 127 else "."
+                          for x in data
+                      )
+
+                      out.write(
+                          "HEADER TEXT: " +
+                          printable +
+                          "\n\n"
+                      )
+
+                  except Exception as e:
+                      out.write(f"ERROR: {e}\n\n")
+
+          print(open("result/rpyc-analysis.txt").read())
+          PY
+
+      - name: Анализ Android runtime
+        run: |
           {
-            echo "=== GAME SIZE ==="
-            du -sh android_game
-
-            echo ""
-            echo "=== REN'PY DATA ==="
-            find android_game -type d -iname "*renpy*"
-
-            echo ""
-            echo "=== RPYC COUNT ==="
-            find android_game -type f -name "*.rpyc" | wc -l
-
-            echo ""
-            echo "=== RPY COUNT ==="
-            find android_game -type f -name "*.rpy" | wc -l
-
-            echo ""
-            echo "=== RPA COUNT ==="
-            find android_game -type f -name "*.rpa" | wc -l
-
             echo ""
             echo "=== ANDROID RUNTIME ==="
-            find android_game -type f -name "librenpython.so"
+            find android_game -type f -name "librenpython.so" -print
 
             echo ""
-            echo "=== ANDROID FILES ==="
-            find android_game -type f \( \
-              -name "AndroidManifest.xml" \
-              -o -name "classes.dex" \
-            \)
-          } | tee result/report.txt
+            echo "=== ANDROID MANIFEST ==="
+            find android_game -type f -name "AndroidManifest.xml" -print
 
-      - name: Подготовить Ren'Py game directory
-        run: |
-          rm -rf test_project
-          mkdir -p test_project/game
+            echo ""
+            echo "=== CLASSES DEX ==="
+            find android_game -type f -name "classes*.dex" -print
 
-          cp -R android_game/assets/x-game/. test_project/game/ 2>/dev/null || true
-          cp -R android_game/assets/x-renpy/. test_project/game/ 2>/dev/null || true
+            echo ""
+            echo "=== RENPY DIRECTORIES ==="
+            find android_game -type d -iname "*renpy*" -print
+          } >> result/rpyc-analysis.txt
 
-          echo "=== GAME DIRECTORY ==="
-          find test_project/game -type f | head -100
-
-      - name: Проверить Ren'Py game directory
-        run: |
-          cd test_project
-
-          echo "=== REN'PY VERSION ==="
-          "$SDK/renpy.sh" --version
-
-          echo ""
-          echo "=== GAME FILES ==="
-          find game -type f -name "*.rpyc" | wc -l
-
-          echo ""
-          echo "=== PYTHON/RPY FILES ==="
-          find game -type f \( -name "*.py" -o -name "*.rpy" \) | head -50
-
-          echo ""
-          echo "=== TEST ==="
-
-          "$SDK/renpy.sh" . lint
-
-      - name: Сохранить отчёт
-        if: always()
+      - name: Сохранить результат
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-final-check
+          name: My-Best-Deal-4.7-RPYC-Analysis
           path: result/

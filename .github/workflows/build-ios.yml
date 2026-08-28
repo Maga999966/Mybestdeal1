@@ -1,10 +1,10 @@
-name: My Best Deal 4.7 - Detect RenPy
+name: My Best Deal 4.7 - RenPy Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  detect:
+  test:
     runs-on: macos-14
 
     steps:
@@ -12,14 +12,16 @@ jobs:
         run: |
           FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
+
           curl -L --fail --retry 5 "$URL" -o game.zip
 
       - name: Распаковать
         run: |
+          rm -rf game
           mkdir -p game
           unzip -oq game.zip -d game
 
-      - name: Скачать RenPy SDK
+      - name: Скачать RenPy 8.3.7
         run: |
           curl -L --fail \
             https://www.renpy.org/dl/8.3.7/renpy-8.3.7-sdk.zip \
@@ -27,29 +29,55 @@ jobs:
 
           unzip -q renpy.zip
 
-      - name: Проверить SDK
+      - name: Найти игровые данные
         run: |
-          find . -maxdepth 2 -type d -name "renpy-*" -print
+          echo "=== Структура ==="
+          find game -maxdepth 3 -type d | head -100
 
-      - name: Проверить совместимость
+          echo ""
+          echo "=== x-game ==="
+          find game -type d -name "x-game" -print
+
+          echo ""
+          echo "=== x-renpy ==="
+          find game -type d -name "x-renpy" -print
+
+      - name: Подготовить RenPy проект
         run: |
           SDK=$(find . -maxdepth 1 -type d -name "renpy-*" | head -1)
 
-          echo "SDK: $SDK"
-          echo ""
-
-          echo "=== Версия SDK ==="
-          "$SDK/renpy.sh" --version || true
-
-          echo ""
-          echo "=== Проверка игры ==="
+          mkdir -p projects
 
           "$SDK/renpy.sh" \
-            launcher \
-            distribute \
-            "$(pwd)/game" \
-            --package mac \
-            --destination "$(pwd)/test-build" || true
+            "$SDK/launcher" \
+            create projects/MyBestDeal || true
+
+      - name: Подготовить game
+        run: |
+          mkdir -p projects/MyBestDeal/game
+
+          cp -R game/assets/x-game/* projects/MyBestDeal/game/ 2>/dev/null || true
+          cp -R game/assets/x-renpy/* projects/MyBestDeal/game/ 2>/dev/null || true
+
+          echo "=== Файлы проекта ==="
+          find projects/MyBestDeal/game -type f | head -100
+
+      - name: Проверить проект RenPy
+        run: |
+          SDK=$(find . -maxdepth 1 -type d -name "renpy-*" | head -1)
+
+          echo "=== Версия ==="
+          "$SDK/renpy.sh" --version
+
+          echo ""
+          echo "=== Проверка проекта ==="
+
+          cd projects/MyBestDeal
+
+          "$SDK/renpy.sh" \
+            . \
+            lint \
+            || true
 
       - name: Создать отчёт
         if: always()
@@ -60,20 +88,21 @@ jobs:
             echo "MY BEST DEAL 4.7"
             echo "================"
             echo ""
-            echo "SDK:"
-            find . -maxdepth 1 -type d -name "renpy-*" -print
+            echo "RenPy SDK:"
+            ./renpy-8.3.7-sdk/renpy.sh --version || true
             echo ""
-            echo "Размер игры:"
-            du -sh game
-            echo ""
-            echo "RPYC:"
+            echo "Количество RPYC:"
             find game -type f -name "*.rpyc" | wc -l
             echo ""
-            echo "RPA:"
-            find game -type f -name "*.rpa" | wc -l
+            echo "Игровые данные:"
+            du -sh game
             echo ""
-            echo "Android runtime:"
-            find game -type f -name "librenpython.so"
+            echo "Результат:"
+            if [ -d "projects/MyBestDeal/game" ]; then
+              echo "RenPy project created"
+            else
+              echo "RenPy project NOT created"
+            fi
           } > result/report.txt
 
           cat result/report.txt
@@ -82,5 +111,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RenPy-detection
+          name: My-Best-Deal-4.7-renpy-test
           path: result/

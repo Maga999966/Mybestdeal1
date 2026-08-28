@@ -1,0 +1,44 @@
+name: My Best Deal 4.7 — iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-14
+
+    steps:
+      - name: Загрузить репозиторий
+        uses: actions/checkout@v4
+
+      - name: Проверить macOS и Xcode
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Проверить файлы игры
+        run: |
+          echo "=== Файлы проекта ==="
+          find . -maxdepth 4 -type f | head -300
+
+          echo "=== Файлы Ren'Py ==="
+          find . -type f \( \
+            -name "*.rpy" \
+            -o -name "*.rpyc" \
+            -o -name "*.rpa" \
+          \) -print | head -500
+
+      - name: Сохранить результат
+        if: always()
+        run: |
+          mkdir -p результат
+          find . -type f \
+            ! -path "./.git/*" \
+            -print > результат/список-файлов.txt
+
+      - name: Загрузить результат
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: проверка-My-Best-Deal
+          path: результат/

@@ -1,4 +1,4 @@
-name: My Best Deal 4.7 — iOS
+name: My Best Deal 4.7 - Check APK data
 
 on:
   workflow_dispatch:
@@ -11,34 +11,40 @@ jobs:
       - name: Загрузить репозиторий
         uses: actions/checkout@v4
 
-      - name: Проверить macOS и Xcode
+      - name: Скачать assets.zip
         run: |
-          sw_vers
-          xcodebuild -version
+          curl -L --fail --retry 3 \
+            "https://drive.google.com/uc?export=download&id=1CTwPCfcnFDCJDIK5qua7n7iWIeP99ir6" \
+            -o assets.zip
 
-      - name: Проверить файлы игры
+      - name: Проверить размер архива
         run: |
-          echo "=== Файлы проекта ==="
-          find . -maxdepth 4 -type f | head -300
+          ls -lh assets.zip
+          file assets.zip
 
-          echo "=== Файлы Ren'Py ==="
-          find . -type f \( \
-            -name "*.rpy" \
-            -o -name "*.rpyc" \
-            -o -name "*.rpa" \
-          \) -print | head -500
+      - name: Распаковать архив
+        run: |
+          mkdir -p game_data
+          unzip -q assets.zip -d game_data || true
 
-      - name: Сохранить результат
+      - name: Проверить структуру
+        run: |
+          echo "=== Папки ==="
+          find game_data -maxdepth 3 -type d | head -200
+
+          echo "=== Файлы ==="
+          find game_data -type f | head -500
+
+      - name: Создать отчёт
         if: always()
         run: |
-          mkdir -p результат
-          find . -type f \
-            ! -path "./.git/*" \
-            -print > результат/список-файлов.txt
+          mkdir -p result
+          find game_data -type f > result/files.txt
+          du -sh game_data > result/size.txt
 
-      - name: Загрузить результат
+      - name: Сохранить отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: проверка-My-Best-Deal
-          path: результат/
+          name: My-Best-Deal-4.7-report
+          path: result/

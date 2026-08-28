@@ -1,99 +1,71 @@
-name: My Best Deal 4.7 - iOS Analysis
+name: My Best Deal 4.7 - iOS Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  analyze:
+  prepare:
     runs-on: macos-14
 
     steps:
-      - name: Загрузить репозиторий
-        uses: actions/checkout@v4
-
-      - name: Скачать полный архив игры
+      - name: Скачать игру
         run: |
           FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
 
           curl -L --fail --retry 5 "$URL" -o game.zip
 
-      - name: Проверить архив
+      - name: Распаковать
         run: |
-          echo "Размер архива:"
-          ls -lh game.zip
-
-          echo "Тип файла:"
-          file game.zip
-
-          echo "Первые записи:"
-          unzip -l game.zip | head -50
-
-      - name: Распаковать игру
-        run: |
-          rm -rf game
           mkdir -p game
-
           unzip -oq game.zip -d game
 
-      - name: Найти структуру игры
+      - name: Проверить Ren'Py
+        run: |
+          echo "=== Ren'Py ==="
+          find game -type d -iname "*renpy*" -print
+
+          echo "=== Compiled scripts ==="
+          find game -type f -name "*.rpyc" | wc -l
+
+          echo "=== Android runtime ==="
+          find game -type f -name "librenpython.so" -print
+
+      - name: Создать отчёт
         run: |
           mkdir -p result
 
-          echo "=== РАЗМЕР ИГРЫ ===" | tee result/analysis.txt
-          du -sh game | tee -a result/analysis.txt
+          {
+            echo "MY BEST DEAL 4.7"
+            echo "================"
+            echo ""
+            echo "Размер:"
+            du -sh game
+            echo ""
+            echo "RPYC:"
+            find game -type f -name "*.rpyc"
+            echo ""
+            echo "Android runtime:"
+            find game -type f -name "librenpython.so"
+            echo ""
+            echo "Android files:"
+            find game -type f \( \
+              -name "AndroidManifest.xml" \
+              -o -name "classes.dex" \
+            \)
+          } > result/analysis.txt
 
-          echo "" | tee -a result/analysis.txt
-          echo "=== REN'PY ===" | tee -a result/analysis.txt
-          find game -type d -iname "*renpy*" | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== GAME ===" | tee -a result/analysis.txt
-          find game -type d -iname "*game*" | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== RPY ===" | tee -a result/analysis.txt
-          find game -type f -name "*.rpy" | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== RPYC ===" | tee -a result/analysis.txt
-          find game -type f -name "*.rpyc" | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== RPA ===" | tee -a result/analysis.txt
-          find game -type f -name "*.rpa" | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== SO LIBRARIES ===" | tee -a result/analysis.txt
-          find game -type f -name "*.so" | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== ANDROID ===" | tee -a result/analysis.txt
-          find game -type f \( \
-            -name "*.dex" \
-            -o -name "*.prof" \
-            -o -name "*.profm" \
-            -o -name "AndroidManifest.xml" \
-          \) | head -100 | tee -a result/analysis.txt
-
-          echo "" | tee -a result/analysis.txt
-          echo "=== TOP-LEVEL ===" | tee -a result/analysis.txt
-          find game -maxdepth 3 -type d | sort | head -300 | tee -a result/analysis.txt
-
-      - name: Создать полный список файлов
-        if: always()
+      - name: Сохранить данные игры
         run: |
-          find game -type f > result/files.txt 2>/dev/null || true
-          du -sh game > result/size.txt 2>/dev/null || true
+          mkdir -p result/game_data
 
-      - name: Показать результат
-        if: always()
-        run: |
-          cat result/analysis.txt
+          cp -R game/assets result/game_data/ 2>/dev/null || true
 
-      - name: Загрузить отчёт
-        if: always()
+          echo "Игровые данные подготовлены."
+          du -sh result/game_data || true
+
+      - name: Загрузить результат
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-analysis
+          name: My-Best-Deal-4.7-iOS-prepared
           path: result/

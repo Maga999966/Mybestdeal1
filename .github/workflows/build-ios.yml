@@ -1,14 +1,14 @@
-name: My Best Deal 4.7 - iOS Build
+name: My Best Deal 4.7 - iOS Analysis
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  analyze:
     runs-on: macos-14
 
     steps:
-      - name: Загрузить проект
+      - name: Загрузить репозиторий
         uses: actions/checkout@v4
 
       - name: Скачать полный архив игры
@@ -20,51 +20,80 @@ jobs:
 
       - name: Проверить архив
         run: |
+          echo "Размер архива:"
           ls -lh game.zip
+
+          echo "Тип файла:"
           file game.zip
+
+          echo "Первые записи:"
+          unzip -l game.zip | head -50
 
       - name: Распаковать игру
         run: |
+          rm -rf game
           mkdir -p game
-          unzip -q game.zip -d game
 
-      - name: Найти Ren'Py
-        run: |
-          echo "=== Ren'Py ==="
-          find game -type d -iname "*renpy*" | head -50
+          unzip -oq game.zip -d game
 
-          echo "=== Game ==="
-          find game -type d -iname "*game*" | head -50
-
-          echo "=== Python ==="
-          find game -type f \( -name "*.py" -o -name "*.pyc" \) | head -50
-
-          echo "=== RPY ==="
-          find game -type f -name "*.rpy" | head -50
-
-          echo "=== RPYC ==="
-          find game -type f -name "*.rpyc" | head -50
-
-      - name: Проверить Android-специфичные файлы
-        run: |
-          echo "=== Android ==="
-          find game -type f \( \
-            -name "*.dex" \
-            -o -name "*.so" \
-            -o -name "AndroidManifest.xml" \
-            -o -name "*android*" \
-          \) | head -200
-
-      - name: Создать отчёт
-        if: always()
+      - name: Найти структуру игры
         run: |
           mkdir -p result
-          find game -type f > result/files.txt
-          du -sh game > result/size.txt
+
+          echo "=== РАЗМЕР ИГРЫ ===" | tee result/analysis.txt
+          du -sh game | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== REN'PY ===" | tee -a result/analysis.txt
+          find game -type d -iname "*renpy*" | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== GAME ===" | tee -a result/analysis.txt
+          find game -type d -iname "*game*" | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== RPY ===" | tee -a result/analysis.txt
+          find game -type f -name "*.rpy" | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== RPYC ===" | tee -a result/analysis.txt
+          find game -type f -name "*.rpyc" | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== RPA ===" | tee -a result/analysis.txt
+          find game -type f -name "*.rpa" | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== SO LIBRARIES ===" | tee -a result/analysis.txt
+          find game -type f -name "*.so" | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== ANDROID ===" | tee -a result/analysis.txt
+          find game -type f \( \
+            -name "*.dex" \
+            -o -name "*.prof" \
+            -o -name "*.profm" \
+            -o -name "AndroidManifest.xml" \
+          \) | head -100 | tee -a result/analysis.txt
+
+          echo "" | tee -a result/analysis.txt
+          echo "=== TOP-LEVEL ===" | tee -a result/analysis.txt
+          find game -maxdepth 3 -type d | sort | head -300 | tee -a result/analysis.txt
+
+      - name: Создать полный список файлов
+        if: always()
+        run: |
+          find game -type f > result/files.txt 2>/dev/null || true
+          du -sh game > result/size.txt 2>/dev/null || true
+
+      - name: Показать результат
+        if: always()
+        run: |
+          cat result/analysis.txt
 
       - name: Загрузить отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-iOS-analysis
+          name: My-Best-Deal-4.7-analysis
           path: result/

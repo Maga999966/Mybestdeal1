@@ -1,10 +1,10 @@
-name: My Best Deal 4.7 - Get Build Info
+name: My Best Deal 4.7 - Find RenPy Version
 
 on:
   workflow_dispatch:
 
 jobs:
-  info:
+  analyze:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,54 +14,60 @@ jobs:
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
           curl -L --fail --retry 5 "$URL" -o game.zip
 
-      - name: Распаковать
+      - name: Распаковать игру
         run: |
           mkdir -p game
           unzip -oq game.zip -d game
 
-      - name: Получить информацию о сборке
+      - name: Поиск версии Ren'Py
         run: |
           mkdir -p result
 
-          echo "=== SCRIPT VERSION ===" | tee result/report.txt
+          echo "MY BEST DEAL 4.7" > result/renpy-version.txt
+          echo "================" >> result/renpy-version.txt
+          echo "" >> result/renpy-version.txt
 
-          find game -type f -name "x-script_version.txt" -print \
-            | tee -a result/report.txt
+          echo "=== SCRIPT VERSION ===" >> result/renpy-version.txt
+          find game -type f -name "x-script_version.txt" -exec sh -c 'echo "FILE: $1"; cat "$1"; echo' _ {} \; >> result/renpy-version.txt
 
-          echo "" | tee -a result/report.txt
+          echo "=== BUILD INFO ===" >> result/renpy-version.txt
+          find game -type f -name "x-build_info.json" -exec sh -c 'echo "FILE: $1"; cat "$1"; echo' _ {} \; >> result/renpy-version.txt
 
-          for FILE in $(find game -type f -name "x-script_version.txt"); do
-            echo "FILE: $FILE" | tee -a result/report.txt
-            cat "$FILE" | tee -a result/report.txt
-            echo "" | tee -a result/report.txt
-          done
+          echo "=== POSSIBLE RENPY VERSION STRINGS ===" >> result/renpy-version.txt
 
-          echo "=== BUILD INFO ===" | tee -a result/report.txt
+          find game -type f \
+            \( -name "*.pyo" -o -name "*.py" -o -name "*.txt" -o -name "*.json" -o -name "*.xml" -o -name "*.so" \) \
+            -print0 |
+          while IFS= read -r -d '' FILE; do
+            strings "$FILE" 2>/dev/null |
+              grep -iE \
+              'Ren.?Py [0-9]+\.[0-9]+|renpy[-_ ]?[0-9]+\.[0-9]+|version[ =:]+[0-9]+\.[0-9]+|8\.[0-9]+\.[0-9]+|7\.[0-9]+\.[0-9]+' \
+              2>/dev/null |
+              while read -r LINE; do
+                echo "$FILE :: $LINE"
+              done
+          done |
+          sort -u |
+          head -500 >> result/renpy-version.txt
 
-          find game -type f -name "x-build_info.json" -print \
-            | tee -a result/report.txt
+          echo "" >> result/renpy-version.txt
+          echo "=== RENPY FILES ===" >> result/renpy-version.txt
 
-          echo "" | tee -a result/report.txt
+          find game -type f |
+            grep -iE '/x-renpy/|renpy' |
+            head -300 >> result/renpy-version.txt
 
-          for FILE in $(find game -type f -name "x-build_info.json"); do
-            echo "FILE: $FILE" | tee -a result/report.txt
-            cat "$FILE" | tee -a result/report.txt
-            echo "" | tee -a result/report.txt
-          done
+          echo "" >> result/renpy-version.txt
+          echo "=== RUNTIME LIBRARIES ===" >> result/renpy-version.txt
 
-          echo "=== RENPY COMMON ===" | tee -a result/report.txt
+          find game -type f -name "librenpython.so" -print >> result/renpy-version.txt
 
-          find game -type f -path "*x-renpy*x-common*" \
-            | head -30 \
-            | tee -a result/report.txt
-
-          echo "" | tee -a result/report.txt
-
-          echo "=== RESULT ==="
-          cat result/report.txt
+          echo ""
+          cat result/renpy-version.txt
 
       - name: Загрузить результат
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-Build-Info
-          path: result/report.txt
+          name: My-Best-Deal-4.7-RenPy-Version
+          path: result/renpy-version.txt

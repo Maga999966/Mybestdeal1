@@ -1,10 +1,10 @@
-name: My Best Deal 4.7 - Download
+name: My Best Deal 4.7 - Full Analysis
 
 on:
   workflow_dispatch:
 
 jobs:
-  download:
+  analyze:
     runs-on: macos-14
 
     steps:
@@ -13,40 +13,78 @@ jobs:
           FILE_ID="1CTwPCfcnFDCJDIK5qua7n7iWIeP99ir6"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
 
-          curl -L --fail --retry 5 \
-            "$URL" \
-            -o assets.zip
+          curl -L --fail --retry 5 "$URL" -o assets.zip
 
       - name: Проверить архив
         run: |
-          echo "Размер:"
+          echo "=== РАЗМЕР ==="
           ls -lh assets.zip
-          echo "Тип:"
           file assets.zip
 
       - name: Распаковать
         run: |
-          mkdir game_data
+          mkdir -p game_data
           unzip -q assets.zip -d game_data
 
-      - name: Проверить содержимое
+      - name: Анализировать игру
         run: |
-          echo "Размер game_data:"
-          du -sh game_data
+          mkdir -p result
+          REPORT="result/analysis.txt"
 
-          echo "Первые файлы:"
-          find game_data -type f | head -200
+          echo "MY BEST DEAL 4.7" > "$REPORT"
+          echo "================" >> "$REPORT"
+          echo "" >> "$REPORT"
 
-      - name: Сохранить отчёт
-        if: always()
+          echo "РАЗМЕР ИГРЫ:" >> "$REPORT"
+          du -sh game_data >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "REN'PY:" >> "$REPORT"
+          find game_data -iname "*renpy*" -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "X-COMMON:" >> "$REPORT"
+          find game_data -iname "*x-common*" -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "X-ANDROID:" >> "$REPORT"
+          find game_data -iname "*x-android*" -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "RPA:" >> "$REPORT"
+          find game_data -type f -iname "*.rpa" -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "RPYC:" >> "$REPORT"
+          find game_data -type f -iname "*.rpyc" | head -100 >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "SO LIBRARIES:" >> "$REPORT"
+          find game_data -type f -iname "*.so" -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "ANDROID APK FILES:" >> "$REPORT"
+          find game_data -type f \( \
+            -iname "*.dex" \
+            -o -iname "*.prof" \
+            -o -iname "*.profm" \
+          \) -print >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "GAME DIRECTORIES:" >> "$REPORT"
+          find game_data -type d | grep -Ei "game|common|renpy|python|lib" | head -200 >> "$REPORT"
+          echo "" >> "$REPORT"
+
+          echo "TOP-LEVEL DIRECTORIES:" >> "$REPORT"
+          find game_data -maxdepth 2 -type d | sort >> "$REPORT"
+
+      - name: Показать результат
         run: |
-          mkdir result
-          find game_data -type f > result/files.txt 2>/dev/null || true
-          du -sh game_data > result/size.txt 2>/dev/null || true
+          cat result/analysis.txt
 
       - name: Загрузить отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-report
-          path: result/
+          name: My-Best-Deal-4.7-analysis
+          path: result/analysis.txt

@@ -1,10 +1,10 @@
-name: My Best Deal 4.7 - iOS Build
+name: My Best Deal 4.7 - Detect RenPy
 
 on:
   workflow_dispatch:
 
 jobs:
-  prepare:
+  detect:
     runs-on: macos-14
 
     steps:
@@ -12,7 +12,6 @@ jobs:
         run: |
           FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
-
           curl -L --fail --retry 5 "$URL" -o game.zip
 
       - name: Распаковать
@@ -20,18 +19,40 @@ jobs:
           mkdir -p game
           unzip -oq game.zip -d game
 
-      - name: Проверить Ren'Py
+      - name: Скачать RenPy SDK
         run: |
-          echo "=== Ren'Py ==="
-          find game -type d -iname "*renpy*" -print
+          curl -L --fail \
+            https://www.renpy.org/dl/8.3.7/renpy-8.3.7-sdk.zip \
+            -o renpy.zip
 
-          echo "=== Compiled scripts ==="
-          find game -type f -name "*.rpyc" | wc -l
+          unzip -q renpy.zip
 
-          echo "=== Android runtime ==="
-          find game -type f -name "librenpython.so" -print
+      - name: Проверить SDK
+        run: |
+          find . -maxdepth 2 -type d -name "renpy-*" -print
+
+      - name: Проверить совместимость
+        run: |
+          SDK=$(find . -maxdepth 1 -type d -name "renpy-*" | head -1)
+
+          echo "SDK: $SDK"
+          echo ""
+
+          echo "=== Версия SDK ==="
+          "$SDK/renpy.sh" --version || true
+
+          echo ""
+          echo "=== Проверка игры ==="
+
+          "$SDK/renpy.sh" \
+            launcher \
+            distribute \
+            "$(pwd)/game" \
+            --package mac \
+            --destination "$(pwd)/test-build" || true
 
       - name: Создать отчёт
+        if: always()
         run: |
           mkdir -p result
 
@@ -39,33 +60,27 @@ jobs:
             echo "MY BEST DEAL 4.7"
             echo "================"
             echo ""
-            echo "Размер:"
+            echo "SDK:"
+            find . -maxdepth 1 -type d -name "renpy-*" -print
+            echo ""
+            echo "Размер игры:"
             du -sh game
             echo ""
             echo "RPYC:"
-            find game -type f -name "*.rpyc"
+            find game -type f -name "*.rpyc" | wc -l
+            echo ""
+            echo "RPA:"
+            find game -type f -name "*.rpa" | wc -l
             echo ""
             echo "Android runtime:"
             find game -type f -name "librenpython.so"
-            echo ""
-            echo "Android files:"
-            find game -type f \( \
-              -name "AndroidManifest.xml" \
-              -o -name "classes.dex" \
-            \)
-          } > result/analysis.txt
+          } > result/report.txt
 
-      - name: Сохранить данные игры
-        run: |
-          mkdir -p result/game_data
+          cat result/report.txt
 
-          cp -R game/assets result/game_data/ 2>/dev/null || true
-
-          echo "Игровые данные подготовлены."
-          du -sh result/game_data || true
-
-      - name: Загрузить результат
+      - name: Загрузить отчёт
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-iOS-prepared
+          name: RenPy-detection
           path: result/

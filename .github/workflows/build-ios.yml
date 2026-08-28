@@ -1,90 +1,70 @@
-name: My Best Deal 4.7 - Full Analysis
+name: My Best Deal 4.7 - iOS Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  analyze:
+  build:
     runs-on: macos-14
 
     steps:
-      - name: Скачать assets.zip
+      - name: Загрузить проект
+        uses: actions/checkout@v4
+
+      - name: Скачать полный архив игры
         run: |
-          FILE_ID="1CTwPCfcnFDCJDIK5qua7n7iWIeP99ir6"
+          FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
 
-          curl -L --fail --retry 5 "$URL" -o assets.zip
+          curl -L --fail --retry 5 "$URL" -o game.zip
 
       - name: Проверить архив
         run: |
-          echo "=== РАЗМЕР ==="
-          ls -lh assets.zip
-          file assets.zip
+          ls -lh game.zip
+          file game.zip
 
-      - name: Распаковать
+      - name: Распаковать игру
         run: |
-          mkdir -p game_data
-          unzip -q assets.zip -d game_data
+          mkdir -p game
+          unzip -q game.zip -d game
 
-      - name: Анализировать игру
+      - name: Найти Ren'Py
+        run: |
+          echo "=== Ren'Py ==="
+          find game -type d -iname "*renpy*" | head -50
+
+          echo "=== Game ==="
+          find game -type d -iname "*game*" | head -50
+
+          echo "=== Python ==="
+          find game -type f \( -name "*.py" -o -name "*.pyc" \) | head -50
+
+          echo "=== RPY ==="
+          find game -type f -name "*.rpy" | head -50
+
+          echo "=== RPYC ==="
+          find game -type f -name "*.rpyc" | head -50
+
+      - name: Проверить Android-специфичные файлы
+        run: |
+          echo "=== Android ==="
+          find game -type f \( \
+            -name "*.dex" \
+            -o -name "*.so" \
+            -o -name "AndroidManifest.xml" \
+            -o -name "*android*" \
+          \) | head -200
+
+      - name: Создать отчёт
+        if: always()
         run: |
           mkdir -p result
-          REPORT="result/analysis.txt"
-
-          echo "MY BEST DEAL 4.7" > "$REPORT"
-          echo "================" >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "РАЗМЕР ИГРЫ:" >> "$REPORT"
-          du -sh game_data >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "REN'PY:" >> "$REPORT"
-          find game_data -iname "*renpy*" -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "X-COMMON:" >> "$REPORT"
-          find game_data -iname "*x-common*" -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "X-ANDROID:" >> "$REPORT"
-          find game_data -iname "*x-android*" -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "RPA:" >> "$REPORT"
-          find game_data -type f -iname "*.rpa" -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "RPYC:" >> "$REPORT"
-          find game_data -type f -iname "*.rpyc" | head -100 >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "SO LIBRARIES:" >> "$REPORT"
-          find game_data -type f -iname "*.so" -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "ANDROID APK FILES:" >> "$REPORT"
-          find game_data -type f \( \
-            -iname "*.dex" \
-            -o -iname "*.prof" \
-            -o -iname "*.profm" \
-          \) -print >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "GAME DIRECTORIES:" >> "$REPORT"
-          find game_data -type d | grep -Ei "game|common|renpy|python|lib" | head -200 >> "$REPORT"
-          echo "" >> "$REPORT"
-
-          echo "TOP-LEVEL DIRECTORIES:" >> "$REPORT"
-          find game_data -maxdepth 2 -type d | sort >> "$REPORT"
-
-      - name: Показать результат
-        run: |
-          cat result/analysis.txt
+          find game -type f > result/files.txt
+          du -sh game > result/size.txt
 
       - name: Загрузить отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-analysis
-          path: result/analysis.txt
+          name: My-Best-Deal-4.7-iOS-analysis
+          path: result/

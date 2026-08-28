@@ -19,11 +19,6 @@ jobs:
           mkdir -p android_game
           unzip -oq game.zip -d android_game
 
-      - name: Установить инструменты
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y file binutils strings
-
       - name: Анализ Android runtime
         run: |
           mkdir -p result
@@ -36,7 +31,7 @@ jobs:
             du -sh android_game
             echo ""
 
-            echo "=== ALL RENPY LIBRARIES ==="
+            echo "=== RENPY LIBRARIES ==="
             find android_game -type f -name "librenpython.so" -print
             echo ""
 
@@ -46,12 +41,14 @@ jobs:
               echo "========================================"
 
               echo ""
-              echo "--- FILE ---"
-              file "$LIB"
+              echo "--- FILE TYPE ---"
+              file "$LIB" || true
 
               echo ""
-              echo "--- STRINGS: RENPY ---"
-              strings "$LIB" | grep -iE "renpy|python|version|build" | head -100 || true
+              echo "--- RENPY/PYTHON STRINGS ---"
+              strings "$LIB" | grep -iE \
+                "renpy|python|version|build" \
+                | head -100 || true
 
               echo ""
               echo "--- ELF INFO ---"
@@ -60,7 +57,7 @@ jobs:
               echo ""
             done
 
-            echo "=== CLASSES DEX ==="
+            echo "=== DEX FILES ==="
             find android_game -type f -name "classes*.dex" -print
             echo ""
 
@@ -76,19 +73,21 @@ jobs:
               echo ""
             done
 
-            echo "=== ANDROID MANIFEST ==="
+            echo "=== MANIFEST ==="
 
             MANIFEST=$(find android_game -type f -name "AndroidManifest.xml" | head -1)
 
             if [ -n "$MANIFEST" ]; then
+              file "$MANIFEST" || true
               strings "$MANIFEST" | head -200
             fi
 
             echo ""
-            echo "=== RENPY FILES ==="
+            echo "=== POSSIBLE VERSION FILES ==="
+
             find android_game -type f | grep -iE \
               "renpy|version|build|config" \
-              | head -200
+              | head -200 || true
 
             echo ""
             echo "=== RPYC COUNT ==="

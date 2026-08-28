@@ -1,10 +1,10 @@
-name: My Best Deal 4.7 - Android Runtime Analysis
+name: My Best Deal 4.7 - Get Build Info
 
 on:
   workflow_dispatch:
 
 jobs:
-  analyze:
+  info:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,92 +16,52 @@ jobs:
 
       - name: Распаковать
         run: |
-          mkdir -p android_game
-          unzip -oq game.zip -d android_game
+          mkdir -p game
+          unzip -oq game.zip -d game
 
-      - name: Анализ Android runtime
+      - name: Получить информацию о сборке
         run: |
           mkdir -p result
 
-          {
-            echo "MY BEST DEAL 4.7"
-            echo "================"
-            echo ""
-            echo "=== SIZE ==="
-            du -sh android_game
-            echo ""
+          echo "=== SCRIPT VERSION ===" | tee result/report.txt
 
-            echo "=== RENPY LIBRARIES ==="
-            find android_game -type f -name "librenpython.so" -print
-            echo ""
+          find game -type f -name "x-script_version.txt" -print \
+            | tee -a result/report.txt
 
-            for LIB in $(find android_game -type f -name "librenpython.so"); do
-              echo "========================================"
-              echo "LIBRARY: $LIB"
-              echo "========================================"
+          echo "" | tee -a result/report.txt
 
-              echo ""
-              echo "--- FILE TYPE ---"
-              file "$LIB" || true
+          for FILE in $(find game -type f -name "x-script_version.txt"); do
+            echo "FILE: $FILE" | tee -a result/report.txt
+            cat "$FILE" | tee -a result/report.txt
+            echo "" | tee -a result/report.txt
+          done
 
-              echo ""
-              echo "--- RENPY/PYTHON STRINGS ---"
-              strings "$LIB" | grep -iE \
-                "renpy|python|version|build" \
-                | head -100 || true
+          echo "=== BUILD INFO ===" | tee -a result/report.txt
 
-              echo ""
-              echo "--- ELF INFO ---"
-              readelf -h "$LIB" 2>/dev/null | head -30 || true
+          find game -type f -name "x-build_info.json" -print \
+            | tee -a result/report.txt
 
-              echo ""
-            done
+          echo "" | tee -a result/report.txt
 
-            echo "=== DEX FILES ==="
-            find android_game -type f -name "classes*.dex" -print
-            echo ""
+          for FILE in $(find game -type f -name "x-build_info.json"); do
+            echo "FILE: $FILE" | tee -a result/report.txt
+            cat "$FILE" | tee -a result/report.txt
+            echo "" | tee -a result/report.txt
+          done
 
-            for DEX in $(find android_game -type f -name "classes*.dex"); do
-              echo "========================================"
-              echo "DEX: $DEX"
-              echo "========================================"
+          echo "=== RENPY COMMON ===" | tee -a result/report.txt
 
-              strings "$DEX" | grep -iE \
-                "renpy|python|pygame|sdl|version|build" \
-                | head -200 || true
+          find game -type f -path "*x-renpy*x-common*" \
+            | head -30 \
+            | tee -a result/report.txt
 
-              echo ""
-            done
+          echo "" | tee -a result/report.txt
 
-            echo "=== MANIFEST ==="
+          echo "=== RESULT ==="
+          cat result/report.txt
 
-            MANIFEST=$(find android_game -type f -name "AndroidManifest.xml" | head -1)
-
-            if [ -n "$MANIFEST" ]; then
-              file "$MANIFEST" || true
-              strings "$MANIFEST" | head -200
-            fi
-
-            echo ""
-            echo "=== POSSIBLE VERSION FILES ==="
-
-            find android_game -type f | grep -iE \
-              "renpy|version|build|config" \
-              | head -200 || true
-
-            echo ""
-            echo "=== RPYC COUNT ==="
-            find android_game -type f -name "*.rpyc" | wc -l
-
-            echo ""
-            echo "=== RPA COUNT ==="
-            find android_game -type f -name "*.rpa" | wc -l
-
-          } | tee result/report.txt
-
-      - name: Загрузить отчёт
-        if: always()
+      - name: Загрузить результат
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-Android-Runtime-Analysis
+          name: My-Best-Deal-4.7-Build-Info
           path: result/report.txt

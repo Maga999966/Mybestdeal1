@@ -1,4 +1,4 @@
-name: My Best Deal 4.7 - RPYC Analysis
+name: My Best Deal 4.7 - Android Runtime Analysis
 
 on:
   workflow_dispatch:
@@ -12,7 +12,6 @@ jobs:
         run: |
           FILE_ID="1BohaY4hx0TfimVWu7QSqjUo7FkCfEfhl"
           URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
-
           curl -L --fail --retry 5 "$URL" -o game.zip
 
       - name: Распаковать
@@ -20,89 +19,90 @@ jobs:
           mkdir -p android_game
           unzip -oq game.zip -d android_game
 
-      - name: Анализировать RPYC
+      - name: Установить инструменты
         run: |
-          mkdir -p result
-
-          python3 <<'PY'
-          import os
-          import struct
-          import hashlib
-
-          root = "android_game"
-          files = []
-
-          for base, dirs, names in os.walk(root):
-              for name in names:
-                  if name.endswith(".rpyc"):
-                      files.append(os.path.join(base, name))
-
-          files.sort()
-
-          with open("result/rpyc-analysis.txt", "w", encoding="utf-8") as out:
-              out.write("MY BEST DEAL 4.7 - RPYC ANALYSIS\n")
-              out.write("=" * 50 + "\n\n")
-
-              out.write(f"RPYC files: {len(files)}\n\n")
-
-              for path in files:
-                  rel = os.path.relpath(path, root)
-
-                  try:
-                      data = open(path, "rb").read(128)
-
-                      sha = hashlib.sha256(
-                          open(path, "rb").read()
-                      ).hexdigest()
-
-                      out.write(f"FILE: {rel}\n")
-                      out.write(f"SIZE: {os.path.getsize(path)}\n")
-                      out.write(f"SHA256: {sha}\n")
-                      out.write(
-                          "HEADER HEX: " +
-                          data[:64].hex(" ") +
-                          "\n"
-                      )
-
-                      printable = "".join(
-                          chr(x) if 32 <= x < 127 else "."
-                          for x in data
-                      )
-
-                      out.write(
-                          "HEADER TEXT: " +
-                          printable +
-                          "\n\n"
-                      )
-
-                  except Exception as e:
-                      out.write(f"ERROR: {e}\n\n")
-
-          print(open("result/rpyc-analysis.txt").read())
-          PY
+          sudo apt-get update -qq
+          sudo apt-get install -y file binutils strings
 
       - name: Анализ Android runtime
         run: |
+          mkdir -p result
+
           {
+            echo "MY BEST DEAL 4.7"
+            echo "================"
             echo ""
-            echo "=== ANDROID RUNTIME ==="
+            echo "=== SIZE ==="
+            du -sh android_game
+            echo ""
+
+            echo "=== ALL RENPY LIBRARIES ==="
             find android_game -type f -name "librenpython.so" -print
-
             echo ""
-            echo "=== ANDROID MANIFEST ==="
-            find android_game -type f -name "AndroidManifest.xml" -print
 
-            echo ""
+            for LIB in $(find android_game -type f -name "librenpython.so"); do
+              echo "========================================"
+              echo "LIBRARY: $LIB"
+              echo "========================================"
+
+              echo ""
+              echo "--- FILE ---"
+              file "$LIB"
+
+              echo ""
+              echo "--- STRINGS: RENPY ---"
+              strings "$LIB" | grep -iE "renpy|python|version|build" | head -100 || true
+
+              echo ""
+              echo "--- ELF INFO ---"
+              readelf -h "$LIB" 2>/dev/null | head -30 || true
+
+              echo ""
+            done
+
             echo "=== CLASSES DEX ==="
             find android_game -type f -name "classes*.dex" -print
+            echo ""
+
+            for DEX in $(find android_game -type f -name "classes*.dex"); do
+              echo "========================================"
+              echo "DEX: $DEX"
+              echo "========================================"
+
+              strings "$DEX" | grep -iE \
+                "renpy|python|pygame|sdl|version|build" \
+                | head -200 || true
+
+              echo ""
+            done
+
+            echo "=== ANDROID MANIFEST ==="
+
+            MANIFEST=$(find android_game -type f -name "AndroidManifest.xml" | head -1)
+
+            if [ -n "$MANIFEST" ]; then
+              strings "$MANIFEST" | head -200
+            fi
 
             echo ""
-            echo "=== RENPY DIRECTORIES ==="
-            find android_game -type d -iname "*renpy*" -print
-          } >> result/rpyc-analysis.txt
+            echo "=== RENPY FILES ==="
+            find android_game -type f | grep -iE \
+              "renpy|version|build|config" \
+              | head -200
 
-      - name: Сохранить результат
+            echo ""
+            echo "=== RPYC COUNT ==="
+            find android_game -type f -name "*.rpyc" | wc -l
+
+            echo ""
+            echo "=== RPA COUNT ==="
+            find android_game -type f -name "*.rpa" | wc -l
+
+          } | tee result/report.txt
+
+      - name: Загрузить отчёт
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: My-Best-Deal-4.7-RPYC-Analysis
-          path: result/
+          name: My-Best-Deal-4.7-Android-Runtime-Analysis
+          path: result/report.txt

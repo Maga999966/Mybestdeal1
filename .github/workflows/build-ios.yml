@@ -1,48 +1,50 @@
-name: My Best Deal 4.7 - Check APK data
+name: My Best Deal 4.7 - Download
 
 on:
   workflow_dispatch:
 
 jobs:
-  check:
+  download:
     runs-on: macos-14
 
     steps:
-      - name: Загрузить репозиторий
-        uses: actions/checkout@v4
-
       - name: Скачать assets.zip
         run: |
-          curl -L --fail --retry 3 \
-            "https://drive.google.com/uc?export=download&id=1CTwPCfcnFDCJDIK5qua7n7iWIeP99ir6" \
+          FILE_ID="1CTwPCfcnFDCJDIK5qua7n7iWIeP99ir6"
+          URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
+
+          curl -L --fail --retry 5 \
+            "$URL" \
             -o assets.zip
 
-      - name: Проверить размер архива
+      - name: Проверить архив
         run: |
+          echo "Размер:"
           ls -lh assets.zip
+          echo "Тип:"
           file assets.zip
 
-      - name: Распаковать архив
+      - name: Распаковать
         run: |
-          mkdir -p game_data
-          unzip -q assets.zip -d game_data || true
+          mkdir game_data
+          unzip -q assets.zip -d game_data
 
-      - name: Проверить структуру
+      - name: Проверить содержимое
         run: |
-          echo "=== Папки ==="
-          find game_data -maxdepth 3 -type d | head -200
+          echo "Размер game_data:"
+          du -sh game_data
 
-          echo "=== Файлы ==="
-          find game_data -type f | head -500
-
-      - name: Создать отчёт
-        if: always()
-        run: |
-          mkdir -p result
-          find game_data -type f > result/files.txt
-          du -sh game_data > result/size.txt
+          echo "Первые файлы:"
+          find game_data -type f | head -200
 
       - name: Сохранить отчёт
+        if: always()
+        run: |
+          mkdir result
+          find game_data -type f > result/files.txt 2>/dev/null || true
+          du -sh game_data > result/size.txt 2>/dev/null || true
+
+      - name: Загрузить отчёт
         if: always()
         uses: actions/upload-artifact@v4
         with:

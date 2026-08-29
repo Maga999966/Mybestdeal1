@@ -9,11 +9,16 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
       - name: Checkout
         uses: actions/checkout@v4
 
+
       # ============================================================
-      # RENPY 8.0.1
+      # DOWNLOAD RENPY 8.0.1
       # ============================================================
 
       - name: Download RenPy 8.0.1
@@ -23,10 +28,9 @@ jobs:
 
           SDK="$RUNNER_TEMP/renpy-sdk"
 
-          rm -rf "$SDK"
-          rm -f "$RUNNER_TEMP/renpy-sdk.tar.bz2"
-
           echo "=== DOWNLOAD RENPY 8.0.1 ==="
+
+          rm -rf "$SDK"
 
           curl -L --fail --retry 3 \
             -o "$RUNNER_TEMP/renpy-sdk.tar.bz2" \
@@ -44,8 +48,9 @@ jobs:
 
           echo "=== RENPY SDK OK ==="
 
+
       # ============================================================
-      # RAPT
+      # DOWNLOAD RAPT
       # ============================================================
 
       - name: Download RAPT
@@ -54,6 +59,8 @@ jobs:
           set -e
 
           SDK="$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== DOWNLOAD RAPT ==="
 
           curl -L --fail --retry 3 \
             -o "$RUNNER_TEMP/rapt.zip" \
@@ -67,8 +74,9 @@ jobs:
 
           echo "=== RAPT OK ==="
 
+
       # ============================================================
-      # RENIOS
+      # DOWNLOAD RENIOS
       # ============================================================
 
       - name: Download RenIOS
@@ -77,6 +85,8 @@ jobs:
           set -e
 
           SDK="$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== DOWNLOAD RENIOS ==="
 
           curl -L --fail --retry 3 \
             -o "$RUNNER_TEMP/renios.zip" \
@@ -90,8 +100,9 @@ jobs:
 
           echo "=== RENIOS OK ==="
 
+
       # ============================================================
-      # VERIFY SDK
+      # VERIFY RENPY STRUCTURE
       # ============================================================
 
       - name: Verify RenPy
@@ -101,20 +112,26 @@ jobs:
 
           SDK="$RUNNER_TEMP/renpy-sdk"
 
-          echo "=== VERIFY SDK ==="
+          echo "=== VERIFY RENPY ==="
 
           test -x "$SDK/renpy.sh"
+
           test -d "$SDK/rapt"
+
           test -d "$SDK/renios"
+
+          test -f "$SDK/renios/hash.txt"
+
           test -d "$SDK/renios/buildlib"
 
           test -f "$SDK/renios/buildlib/renios/__init__.py"
+
           test -f "$SDK/renios/buildlib/renios/create.py"
 
-          echo "SDK:"
-          "$SDK/renpy.sh" --version || true
+          test -f "$SDK/renios/buildlib/renios/image.py"
 
-          echo "=== SDK READY ==="
+          echo "=== RENPY 8.0.1 + RAPT + RENIOS READY ==="
+
 
       # ============================================================
       # DOWNLOAD APK
@@ -130,6 +147,7 @@ jobs:
           APK_DIR="$RUNNER_TEMP/apk"
 
           rm -rf "$APK_DIR"
+
           mkdir -p "$APK_DIR"
 
           echo "=== DOWNLOAD APK ==="
@@ -151,8 +169,9 @@ jobs:
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
-          echo "APK:"
+          echo "=== APK FOUND ==="
           echo "$APK"
+
 
       # ============================================================
       # EXTRACT APK
@@ -166,7 +185,10 @@ jobs:
           OUT="$RUNNER_TEMP/apk-extracted"
 
           rm -rf "$OUT"
+
           mkdir -p "$OUT"
+
+          echo "=== EXTRACT APK ==="
 
           unzip -q -o \
             "$APK" \
@@ -174,44 +196,51 @@ jobs:
 
           echo "=== APK EXTRACTED ==="
 
+
       # ============================================================
       # FIND X-GAME
       # ============================================================
 
-      - name: Prepare game
+      - name: Prepare RenPy game
         shell: bash
         run: |
           set -e
 
-          SRC=$(find "$RUNNER_TEMP/apk-extracted" \
+          echo "=== FIND X-GAME ==="
+
+          GAME=$(find "$RUNNER_TEMP/apk-extracted" \
             -type d \
             -name "x-game" \
             | head -1)
 
-          if [ -z "$SRC" ]; then
+          if [ -z "$GAME" ]; then
             echo "ERROR: x-game NOT FOUND"
+
             find "$RUNNER_TEMP/apk-extracted" \
-              -maxdepth 4 \
+              -maxdepth 5 \
               -type d
+
             exit 1
           fi
 
-          echo "GAME SOURCE:"
-          echo "$SRC"
+          echo "GAME:"
+          echo "$GAME"
 
           rm -rf "$GITHUB_WORKSPACE/game"
+
           mkdir -p "$GITHUB_WORKSPACE/game"
 
-          cp -R "$SRC"/. \
+          cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
           echo "=== GAME READY ==="
 
+
       # ============================================================
-      # REMOVE OLD RPYC
+      # REMOVE COMPILED RPYC
       # ============================================================
 
-      - name: Remove compiled RPYC
+      - name: Remove stale RPYC
         shell: bash
         run: |
           set -e
@@ -225,69 +254,95 @@ jobs:
 
           echo "=== RPYC REMOVED ==="
 
+
       # ============================================================
-      # PREPARE RENIOS
+      # CHECK GAME
       # ============================================================
 
-      - name: Prepare RenIOS
+      - name: Check game files
         shell: bash
         run: |
           set -e
 
-          SDK="$RUNNER_TEMP/renpy-sdk"
+          echo "=== GAME FILES ==="
 
-          echo "=== RENIOS ==="
-
-          find "$SDK/renios" \
-            -maxdepth 3 \
+          echo "RYP:"
+          find "$GITHUB_WORKSPACE/game" \
             -type f \
-            | head -50
+            -name "*.rpy" \
+            | wc -l
 
-          test -f "$SDK/renios/buildlib/renios/__init__.py"
-          test -f "$SDK/renios/buildlib/renios/create.py"
+          echo "RPA:"
+          find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpa" \
+            | wc -l
 
-          echo "=== RENIOS READY ==="
+          echo "GAME SIZE:"
+          du -sh "$GITHUB_WORKSPACE/game"
+
+          echo "=== GAME CHECK OK ==="
+
 
       # ============================================================
       # CREATE IOS PROJECT
       # ============================================================
 
-      - name: Create iOS project
+      - name: Create iOS Xcode project
         shell: bash
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
-          RENPY_RENDERER: sw
         run: |
           set -e
 
           SDK="$RUNNER_TEMP/renpy-sdk"
+
           PROJECT="$GITHUB_WORKSPACE"
+
           DEST="$RUNNER_TEMP/ios-project"
 
-          rm -rf "$DEST"
-          mkdir -p "$DEST"
-
           echo "=== IOS CREATE ==="
-          echo "SDK: $SDK"
-          echo "PROJECT: $PROJECT"
-          echo "DEST: $DEST"
+
+          echo "SDK:"
+          echo "$SDK"
+
+          echo "PROJECT:"
+          echo "$PROJECT"
+
+          echo "DEST:"
+          echo "$DEST"
+
+          # IMPORTANT:
+          # Do not allow Ren'Py to ask:
+          # "The Xcode project already exists..."
+          #
+          # We remove the destination before starting.
+
+          rm -rf "$DEST"
+
+          mkdir -p "$DEST"
 
           cd "$SDK"
 
-          export PYTHONPATH="$SDK/renios/buildlib:$SDK/rapt/buildlib:$SDK"
+          echo "=== CHECK RENIOS ==="
 
-          echo "=== RUN RENPY ==="
+          test -d "$SDK/renios"
+
+          test -f "$SDK/renios/hash.txt"
+
+          test -f "$SDK/renios/buildlib/renios/__init__.py"
+
+          echo "=== RUN RENPY IOS_CREATE ==="
 
           "$SDK/renpy.sh" \
             launcher \
             ios_create \
             "$PROJECT" \
-            "$DEST" <<'EOF'
-yes
-EOF
+            "$DEST"
 
           echo "=== IOS CREATE FINISHED ==="
+
 
       # ============================================================
       # VERIFY XCODE
@@ -298,7 +353,7 @@ EOF
         run: |
           set -e
 
-          echo "=== VERIFY XCODE ==="
+          echo "=== VERIFY XCODE PROJECT ==="
 
           XCODE=$(find "$RUNNER_TEMP/ios-project" \
             -type d \
@@ -306,17 +361,22 @@ EOF
             | head -1)
 
           if [ -z "$XCODE" ]; then
+
             echo "ERROR: XCODE PROJECT NOT FOUND"
 
+            echo "=== IOS DIRECTORY ==="
+
             find "$RUNNER_TEMP/ios-project" \
-              -maxdepth 6 \
+              -maxdepth 7 \
               -print
 
             exit 1
           fi
 
-          echo "=== XCODE FOUND ==="
+          echo "=== XCODE PROJECT FOUND ==="
+
           echo "$XCODE"
+
 
       # ============================================================
       # ZIP
@@ -331,6 +391,8 @@ EOF
 
           rm -f MyBestDeal-4.7-iOS.zip
 
+          echo "=== CREATE ZIP ==="
+
           ditto -c -k \
             --sequesterRsrc \
             --keepParent \
@@ -340,10 +402,12 @@ EOF
           test -f MyBestDeal-4.7-iOS.zip
 
           echo "=== ZIP READY ==="
+
           ls -lh MyBestDeal-4.7-iOS.zip
 
+
       # ============================================================
-      # ARTIFACT
+      # UPLOAD ARTIFACT
       # ============================================================
 
       - name: Upload iOS project

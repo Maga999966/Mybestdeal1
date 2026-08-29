@@ -16,10 +16,11 @@ jobs:
 
       - name: Установить инструменты
         run: |
+          set -e
           sudo apt-get update -qq
           sudo apt-get install -y unzip
 
-      - name: Скачать APK из Release v4.7
+      - name: Скачать APK из Release B4.7
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -27,11 +28,12 @@ jobs:
 
           mkdir -p apk
 
-          echo "=== СКАЧИВАЕМ APK ИЗ RELEASE v4.7 ==="
+          echo "=== СКАЧИВАЕМ APK ИЗ RELEASE B4.7 ==="
 
-          gh release download v4.7 \
+          gh release download B4.7 \
             --pattern "*.apk" \
-            --dir apk
+            --dir apk \
+            --repo "${{ github.repository }}"
 
           echo ""
           echo "=== СКАЧАННЫЕ ФАЙЛЫ ==="
@@ -48,76 +50,107 @@ jobs:
             exit 1
           fi
 
-          echo "APK: $APK"
+          echo "Найден APK:"
+          echo "$APK"
 
           mkdir -p extracted
 
           unzip -q "$APK" -d extracted
 
           echo ""
-          echo "=== APK РАСПАКОВАН ==="
+          echo "=== APK УСПЕШНО РАСПАКОВАН ==="
 
-      - name: Найти x-game
+      - name: Найти структуру игры
         run: |
           set -e
 
           echo "=== ПОИСК x-game ==="
 
-          find extracted -type d -name "x-game" -print
+          GAME_DIR=$(find extracted -type d -name "x-game" | head -1 || true)
+
+          if [ -z "$GAME_DIR" ]; then
+            echo "x-game напрямую не найден."
+            echo ""
+            echo "=== ПОИСК GAME/ASSETS ==="
+            find extracted -type d \( -name "game" -o -name "assets" \) -print
+          else
+            echo "НАЙДЕНО:"
+            echo "$GAME_DIR"
+          fi
 
           echo ""
-          echo "=== ПОИСК assets ==="
-
-          find extracted -type d -name "assets" -print
-
-          echo ""
-          echo "=== RPYC ==="
-
-          find extracted -type f -name "*.rpyc" | wc -l
-
-          echo ""
-          echo "=== RPA ==="
-
-          find extracted -type f -name "*.rpa" | wc -l
-
-          echo ""
-          echo "=== SCRIPT VERSION ==="
+          echo "=== ПОИСК x-script_version.txt ==="
 
           find extracted -type f -name "x-script_version.txt" -print
 
           echo ""
-          echo "=== BUILD INFO ==="
+          echo "=== ПОИСК x-build_info.json ==="
 
           find extracted -type f -name "x-build_info.json" -print
 
+          echo ""
+          echo "=== RENPY LIBRARIES ==="
+
+          find extracted -type f -name "librenpython.so" -print
+
+          echo ""
+          echo "=== DEX FILES ==="
+
+          find extracted -type f -name "*.dex" -print
+
+          echo ""
+          echo "=== RPYC COUNT ==="
+
+          find extracted -type f -name "*.rpyc" | wc -l
+
+          echo ""
+          echo "=== RPA COUNT ==="
+
+          find extracted -type f -name "*.rpa" | wc -l
+
       - name: Создать отчёт
         run: |
+          set -e
+
           mkdir -p result
 
           echo "MY BEST DEAL 4.7" > result/report.txt
           echo "================" >> result/report.txt
-          echo "" >> result/report.txt
-
-          echo "=== x-game ===" >> result/report.txt
-          find extracted -type d -name "x-game" -print >> result/report.txt
-
-          echo "" >> result/report.txt
-          echo "=== RPYC COUNT ===" >> result/report.txt
-          find extracted -type f -name "*.rpyc" | wc -l >> result/report.txt
-
-          echo "" >> result/report.txt
-          echo "=== RPA COUNT ===" >> result/report.txt
-          find extracted -type f -name "*.rpa" | wc -l >> result/report.txt
 
           echo "" >> result/report.txt
           echo "=== SCRIPT VERSION ===" >> result/report.txt
-          find extracted -type f -name "x-script_version.txt" -exec cat {} \; >> result/report.txt
+
+          find extracted -type f -name "x-script_version.txt" \
+            -exec sh -c 'echo "FILE: $1"; cat "$1"' _ {} \; \
+            >> result/report.txt || true
 
           echo "" >> result/report.txt
           echo "=== BUILD INFO ===" >> result/report.txt
-          find extracted -type f -name "x-build_info.json" -exec cat {} \; >> result/report.txt
+
+          find extracted -type f -name "x-build_info.json" \
+            -exec sh -c 'echo "FILE: $1"; cat "$1"' _ {} \; \
+            >> result/report.txt || true
+
+          echo "" >> result/report.txt
+          echo "=== RENPY LIBRARIES ===" >> result/report.txt
+
+          find extracted -type f -name "librenpython.so" \
+            >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPYC COUNT ===" >> result/report.txt
+
+          find extracted -type f -name "*.rpyc" | wc -l \
+            >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPA COUNT ===" >> result/report.txt
+
+          find extracted -type f -name "*.rpa" | wc -l \
+            >> result/report.txt
 
           echo ""
+          echo "=== РЕЗУЛЬТАТ ==="
           cat result/report.txt
 
       - name: Загрузить отчёт

@@ -7,80 +7,121 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
-      - name: Checkout repository
+      - name: Скачать репозиторий
         uses: actions/checkout@v4
 
-      - name: Show repository structure
-        shell: bash
+      - name: Установить инструменты
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y unzip
+
+      - name: Скачать APK из Release v4.7
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
 
-          echo "=== КОРЕНЬ РЕПОЗИТОРИЯ ==="
-          find . -maxdepth 3 -type d | sort | head -200
+          mkdir -p apk
+
+          echo "=== СКАЧИВАЕМ APK ИЗ RELEASE v4.7 ==="
+
+          gh release download v4.7 \
+            --pattern "*.apk" \
+            --dir apk
 
           echo ""
-          echo "=== ПОИСК APK ==="
-          find . -type f -iname "*.apk" -print
+          echo "=== СКАЧАННЫЕ ФАЙЛЫ ==="
+          ls -lh apk
 
-      - name: Find game assets
-        shell: bash
+      - name: Распаковать APK
+        run: |
+          set -e
+
+          APK=$(find apk -type f -iname "*.apk" | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ОШИБКА: APK не найден"
+            exit 1
+          fi
+
+          echo "APK: $APK"
+
+          mkdir -p extracted
+
+          unzip -q "$APK" -d extracted
+
+          echo ""
+          echo "=== APK РАСПАКОВАН ==="
+
+      - name: Найти x-game
         run: |
           set -e
 
           echo "=== ПОИСК x-game ==="
 
-          GAME_DIR=$(find . -type d -name "x-game" | head -1 || true)
-
-          if [ -z "$GAME_DIR" ]; then
-            echo "ОШИБКА: x-game не найден"
-            exit 1
-          fi
-
-          echo "НАЙДЕНО: $GAME_DIR"
+          find extracted -type d -name "x-game" -print
 
           echo ""
-          echo "=== СОДЕРЖИМОЕ x-game ==="
-          find "$GAME_DIR" -maxdepth 3 -type f | sort | head -300
+          echo "=== ПОИСК assets ==="
+
+          find extracted -type d -name "assets" -print
 
           echo ""
-          echo "=== RPYC ФАЙЛЫ ==="
-          find "$GAME_DIR" -type f -name "*.rpyc" | sort
+          echo "=== RPYC ==="
+
+          find extracted -type f -name "*.rpyc" | wc -l
 
           echo ""
-          echo "=== RPA ФАЙЛЫ ==="
-          find "$GAME_DIR" -type f -name "*.rpa" | sort
+          echo "=== RPA ==="
+
+          find extracted -type f -name "*.rpa" | wc -l
 
           echo ""
-          echo "=== ВЕРСИЯ ИГРЫ ==="
+          echo "=== SCRIPT VERSION ==="
 
-          VERSION_FILE=$(find "$GAME_DIR" -type f -name "x-script_version.txt" | head -1 || true)
-
-          if [ -n "$VERSION_FILE" ]; then
-            cat "$VERSION_FILE"
-          else
-            echo "Файл версии не найден"
-          fi
+          find extracted -type f -name "x-script_version.txt" -print
 
           echo ""
           echo "=== BUILD INFO ==="
 
-          BUILD_FILE=$(find "$GAME_DIR" -type f -name "x-build_info.json" | head -1 || true)
+          find extracted -type f -name "x-build_info.json" -print
 
-          if [ -n "$BUILD_FILE" ]; then
-            cat "$BUILD_FILE"
-          else
-            echo "x-build_info.json не найден"
-          fi
-
-      - name: Check RenPy libraries
-        shell: bash
+      - name: Создать отчёт
         run: |
-          echo "=== RENPY LIBRARIES ==="
+          mkdir -p result
 
-          find . -type f -name "librenpython.so" -print
+          echo "MY BEST DEAL 4.7" > result/report.txt
+          echo "================" >> result/report.txt
+          echo "" >> result/report.txt
+
+          echo "=== x-game ===" >> result/report.txt
+          find extracted -type d -name "x-game" -print >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPYC COUNT ===" >> result/report.txt
+          find extracted -type f -name "*.rpyc" | wc -l >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPA COUNT ===" >> result/report.txt
+          find extracted -type f -name "*.rpa" | wc -l >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== SCRIPT VERSION ===" >> result/report.txt
+          find extracted -type f -name "x-script_version.txt" -exec cat {} \; >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== BUILD INFO ===" >> result/report.txt
+          find extracted -type f -name "x-build_info.json" -exec cat {} \; >> result/report.txt
 
           echo ""
-          echo "=== DEX FILES ==="
+          cat result/report.txt
 
-          find . -type f -name "*.dex" -print
+      - name: Загрузить отчёт
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybestdeal-analysis
+          path: result/report.txt

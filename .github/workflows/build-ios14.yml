@@ -12,10 +12,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ==========================================
-      # RENPY
-      # ==========================================
-
       - name: Download RenPy 8.0.1
         run: |
           set -e
@@ -23,14 +19,13 @@ jobs:
           cd "$RUNNER_TEMP"
 
           curl -L --fail \
-            -o renpy.tar.bz2 \
+            -o renpy-sdk.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
           rm -rf "$RUNNER_TEMP/renpy-sdk"
+          mkdir -p "$RUNNER_TEMP/renpy-sdk"
 
-          mkdir "$RUNNER_TEMP/renpy-sdk"
-
-          tar -xjf renpy.tar.bz2 \
+          tar -xjf renpy-sdk.tar.bz2 \
             --strip-components=1 \
             -C "$RUNNER_TEMP/renpy-sdk"
 
@@ -40,11 +35,7 @@ jobs:
 
           echo "=== RENPY OK ==="
 
-      # ==========================================
-      # RAPT
-      # ==========================================
-
-      - name: Install RAPT
+      - name: Install RAPT 8.0.1
         run: |
           set -e
 
@@ -63,11 +54,7 @@ jobs:
 
           echo "=== RAPT OK ==="
 
-      # ==========================================
-      # RENIOS
-      # ==========================================
-
-      - name: Install Renios
+      - name: Install Renios 8.0.1
         run: |
           set -e
 
@@ -86,10 +73,6 @@ jobs:
 
           echo "=== RENIOS OK ==="
 
-      # ==========================================
-      # APK
-      # ==========================================
-
       - name: Download APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -100,6 +83,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/apk"
 
           echo "=== DOWNLOAD APK ==="
+          echo "Release: mybestdeal47"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -111,35 +95,33 @@ jobs:
             -iname "*.apk" \
             | head -1)
 
-          test -n "$APK"
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK NOT FOUND"
+            exit 1
+          fi
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-          echo "APK:"
+          echo "APK FOUND:"
           echo "$APK"
 
-      # ==========================================
-      # EXTRACT
-      # ==========================================
+          echo "APK=$APK" >> "$GITHUB_ENV"
 
       - name: Extract APK
         run: |
           set -e
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
+          mkdir -p "$RUNNER_TEMP/apk-extracted"
 
-          mkdir "$RUNNER_TEMP/apk-extracted"
+          echo "=== EXTRACT APK ==="
 
           unzip -q -o "$APK" \
             -d "$RUNNER_TEMP/apk-extracted"
 
-      # ==========================================
-      # COPY GAME
-      # ==========================================
-
-      - name: Prepare game
+      - name: Find and copy x-game
         run: |
           set -e
+
+          echo "=== FIND x-game ==="
 
           GAME=$(find "$RUNNER_TEMP/apk-extracted" \
             -type d \
@@ -147,40 +129,83 @@ jobs:
             | head -1)
 
           if [ -z "$GAME" ]; then
-            echo "ERROR: x-game not found"
+            echo "ERROR: x-game NOT FOUND"
             exit 1
           fi
 
-          rm -rf "$GITHUB_WORKSPACE/game"
+          echo "FOUND:"
+          echo "$GAME"
 
-          mkdir "$GITHUB_WORKSPACE/game"
+          rm -rf "$GITHUB_WORKSPACE/game"
+          mkdir -p "$GITHUB_WORKSPACE/game"
 
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
-          echo "=== GAME ==="
-
-          find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpyc" \
-            | wc -l
-
-      # ==========================================
-      # PATCH IOS.RPY
-      # ==========================================
-
-      - name: Patch RenPy iOS builder
+      - name: Verify game
         run: |
           set -e
 
-          IOS="$RUNNER_TEMP/renpy-sdk/renpy/common/ios.rpy"
+          echo "=== GAME CHECK ==="
 
-          if [ ! -f "$IOS" ]; then
-            echo "ERROR: ios.rpy not found"
+          RPYC=$(find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpyc" \
+            | wc -l \
+            | tr -d ' ')
+
+          RPA=$(find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpa" \
+            | wc -l \
+            | tr -d ' ')
+
+          echo "RPYC: $RPYC"
+          echo "RPA: $RPA"
+
+          if [ "$RPYC" -eq 0 ]; then
+            echo "ERROR: NO RPYC FILES"
             exit 1
           fi
 
-          echo "=== PATCH IOS BUILDER ==="
+          echo ""
+          echo "=== VERSION ==="
+
+          cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
+
+          echo ""
+          echo "=== BUILD INFO ==="
+
+          cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
+
+      # ==========================================
+      # PATCH ACTUAL RenPy iOS BUILDER
+      # ==========================================
+
+      - name: Patch iOS builder
+        run: |
+          set -e
+
+          echo "=== FIND IOS.RPY ==="
+
+          IOS=$(find "$RUNNER_TEMP/renpy-sdk" \
+            -type f \
+            -path "*/game/ios.rpy" \
+            | head -1)
+
+          if [ -z "$IOS" ]; then
+            echo "ERROR: ios.rpy NOT FOUND"
+
+            find "$RUNNER_TEMP/renpy-sdk" \
+              -type f \
+              -name "ios.rpy" \
+              -print
+
+            exit 1
+          fi
+
+          echo "IOS.RPY:"
+          echo "$IOS"
 
           cp "$IOS" "$IOS.backup"
 
@@ -193,28 +218,32 @@ jobs:
               data = f.read()
 
           old = "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])"
-
           new = "project.update_dump(force=False, gui=False, compile=False)"
 
-          if old not in data:
-              print("WARNING: target line not found")
-          else:
+          if old in data:
               data = data.replace(old, new)
-              print("Patch applied.")
+              print("=== PATCH APPLIED ===")
+          else:
+              print("=== TARGET LINE NOT FOUND ===")
+              print("Existing update_dump lines:")
+
+              for line in data.splitlines():
+                  if "update_dump" in line:
+                      print(line)
 
           with open(path, "w", encoding="utf-8") as f:
               f.write(data)
           PY
 
-          echo "=== CHECK PATCH ==="
+          echo "=== PATCH CHECK ==="
 
           grep -n "update_dump" "$IOS" || true
 
       # ==========================================
-      # IOS DESTINATION
+      # CLEAN DESTINATION
       # ==========================================
 
-      - name: Prepare iOS destination
+      - name: Clean iOS destination
         run: |
           set -e
 
@@ -222,15 +251,16 @@ jobs:
 
           test ! -e "$RUNNER_TEMP/ios-project"
 
-          echo "=== DESTINATION READY ==="
+          echo "=== IOS DESTINATION CLEAN ==="
 
       # ==========================================
-      # IOS CREATE
+      # CREATE IOS
       # ==========================================
 
       - name: Create iOS project
         env:
           SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
         run: |
           set -e
 
@@ -245,7 +275,7 @@ jobs:
           echo "=== IOS CREATE FINISHED ==="
 
       # ==========================================
-      # VERIFY
+      # VERIFY XCODE
       # ==========================================
 
       - name: Verify Xcode project
@@ -255,24 +285,26 @@ jobs:
           echo "=== VERIFY XCODE ==="
 
           PROJECT=$(find "$RUNNER_TEMP/ios-project" \
+            -type d \
             -name "*.xcodeproj" \
             | head -1)
 
           if [ -z "$PROJECT" ]; then
-            echo "ERROR: Xcode project not found"
+            echo "ERROR: XCODE PROJECT NOT FOUND"
 
             find "$RUNNER_TEMP/ios-project" \
-              -maxdepth 6 \
-              -print
+              -maxdepth 8 \
+              -print \
+              | sort
 
             exit 1
           fi
 
-          echo "Xcode project:"
+          echo "XCODE PROJECT FOUND:"
           echo "$PROJECT"
 
       # ==========================================
-      # ARTIFACT
+      # UPLOAD
       # ==========================================
 
       - name: Upload iOS project

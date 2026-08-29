@@ -11,33 +11,61 @@ jobs:
       - name: Скачать репозиторий
         uses: actions/checkout@v4
 
-      - name: Проверить Ren'Py 8.0.1
+      - name: Найти Ren'Py SDK
         run: |
           set -e
 
-          SDK="$GITHUB_WORKSPACE/renpy-8.0.1-sdk"
+          echo "=== ПОИСК RENPY.PY ==="
 
-          if [ ! -f "$SDK/renpy.py" ]; then
-            echo "ОШИБКА: Ren'Py SDK не найден"
+          SDK=$(find "$GITHUB_WORKSPACE" \
+            -type f \
+            -name "renpy.py" \
+            -not -path "*/.git/*" \
+            | head -1)
+
+          if [ -z "$SDK" ]; then
+            echo "ОШИБКА: renpy.py не найден"
+            echo ""
+            echo "=== КАТАЛОГИ РЕПОЗИТОРИЯ ==="
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type d | sort
             exit 1
           fi
 
-          if [ ! -d "$SDK/renios" ]; then
-            echo "ОШИБКА: Renios не найден"
+          SDK_DIR=$(dirname "$SDK")
+
+          echo "Ren'Py найден:"
+          echo "$SDK"
+
+          echo "SDK:"
+          echo "$SDK_DIR"
+
+          echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
+
+      - name: Проверить Renios
+        run: |
+          set -e
+
+          echo "=== ПРОВЕРКА RENIOS ==="
+
+          if [ ! -d "$SDK_DIR/renios" ]; then
+            echo "ОШИБКА: папка renios не найдена"
+            find "$SDK_DIR" -maxdepth 2 -type d | sort
             exit 1
           fi
 
-          echo "Ren'Py SDK найден"
-          echo "Renios найден"
+          echo "Renios найден."
 
       - name: Найти x-game
         run: |
           set -e
 
-          GAME_SOURCE=$(find . \
+          echo "=== ПОИСК x-game ==="
+
+          GAME_SOURCE=$(find "$GITHUB_WORKSPACE" \
             -type d \
             -name "x-game" \
-            -not -path "./renpy-8.0.1-sdk/*" \
+            -not -path "*/.git/*" \
+            -not -path "*/renpy-8.0.1-sdk/*" \
             | head -1)
 
           if [ -z "$GAME_SOURCE" ]; then
@@ -45,77 +73,81 @@ jobs:
             exit 1
           fi
 
-          echo "Найдена игра:"
+          echo "Игра найдена:"
           echo "$GAME_SOURCE"
 
-          rm -rf game
-          mkdir -p game
+          rm -rf "$GITHUB_WORKSPACE/game"
+          mkdir -p "$GITHUB_WORKSPACE/game"
 
-          cp -R "$GAME_SOURCE"/. game/
+          cp -R "$GAME_SOURCE"/. "$GITHUB_WORKSPACE/game"/
 
-          echo "=== GAME ==="
-          find game -maxdepth 2 -type f | sort | head -200
+          echo "GAME_DIR=$GITHUB_WORKSPACE/game" >> "$GITHUB_ENV"
 
       - name: Проверить игру
         run: |
           set -e
 
-          COUNT=$(find game -type f -name "*.rpyc" | wc -l | tr -d ' ')
+          echo "=== ПРОВЕРКА ИГРЫ ==="
 
-          echo "RPYC файлов: $COUNT"
+          RPYC=$(find "$GAME_DIR" -type f -name "*.rpyc" | wc -l | tr -d ' ')
 
-          if [ "$COUNT" -eq 0 ]; then
-            echo "ОШИБКА: .rpyc файлы не найдены"
+          echo "RPYC: $RPYC"
+
+          if [ "$RPYC" -eq 0 ]; then
+            echo "ОШИБКА: rpyc не найден"
             exit 1
           fi
 
+          echo ""
           echo "Версия:"
-          cat game/x-script_version.txt || true
+          cat "$GAME_DIR/x-script_version.txt" || true
 
           echo ""
           echo "Build info:"
-          cat game/x-cache/x-build_info.json || true
+          cat "$GAME_DIR/x-cache/x-build_info.json" || true
 
-      - name: Создать Xcode проект Ren'Py
+      - name: Создать iOS Xcode проект
         run: |
           set -e
 
-          SDK="$GITHUB_WORKSPACE/renpy-8.0.1-sdk"
+          IOS_PROJECT="$GITHUB_WORKSPACE/ios-project"
 
-          cd "$GITHUB_WORKSPACE"
+          rm -rf "$IOS_PROJECT"
+          mkdir -p "$IOS_PROJECT"
 
           echo "=== IOS CREATE ==="
 
-          python3 "$SDK/renpy.py" ios_create
+          cd "$SDK_DIR"
 
-      - name: Заполнить Xcode проект
+          ./renpy.sh launcher ios_create \
+            "$GITHUB_WORKSPACE" \
+            "$IOS_PROJECT"
+
+      - name: Обновить iOS проект
         run: |
           set -e
 
-          SDK="$GITHUB_WORKSPACE/renpy-8.0.1-sdk"
-
-          cd "$GITHUB_WORKSPACE"
-
           echo "=== IOS POPULATE ==="
 
-          python3 "$SDK/renpy.py" ios_populate
+          cd "$SDK_DIR"
 
-      - name: Найти Xcode проект
+          ./renpy.sh launcher ios_populate \
+            "$GITHUB_WORKSPACE" \
+            "$GITHUB_WORKSPACE/ios-project"
+
+      - name: Показать результат
+        if: always()
         run: |
-          echo "=== XCODE PROJECTS ==="
+          echo "=== РЕЗУЛЬТАТ ==="
 
-          find . \
-            -type d \
+          find "$GITHUB_WORKSPACE/ios-project" \
+            -maxdepth 4 \
             \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
-            -not -path "./renpy-8.0.1-sdk/*" \
-            -print
+            -print || true
 
-      - name: Сохранить Xcode проект
+      - name: Загрузить iOS проект
         uses: actions/upload-artifact@v4
         with:
-          name: MyBestDeal-4.7-iOS-Xcode
-          path: |
-            **/*.xcodeproj
-            **/*.xcworkspace
-            **/ios
-          if-no-files-found: warn
+          name: MyBestDeal-4.7-iOS
+          path: ios-project/
+          if-no-files-found: error

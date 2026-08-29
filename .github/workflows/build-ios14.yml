@@ -9,65 +9,89 @@ jobs:
 
     steps:
 
-      - name: Скачать репозиторий
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Создать Python окружение
-        run: |
-          set -e
-
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/venv/bin/python" -m pip install future
-
-          echo "Python окружение готово"
-
-      - name: Скачать RenPy 8.0.1
+      - name: Download RenPy 8.0.1
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
 
-          echo "=== RENPY 8.0.1 ==="
+          echo "=== DOWNLOAD RENPY 8.0.1 ==="
 
           curl -L --fail \
             -o renpy-sdk.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
-          rm -rf renpy-sdk
-          mkdir -p renpy-sdk
+          rm -rf "$RUNNER_TEMP/renpy-sdk"
+
+          mkdir -p "$RUNNER_TEMP/renpy-sdk"
 
           tar -xjf renpy-sdk.tar.bz2 \
             --strip-components=1 \
-            -C renpy-sdk
+            -C "$RUNNER_TEMP/renpy-sdk"
 
           test -f "$RUNNER_TEMP/renpy-sdk/renpy.py"
           test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
           chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
-          echo "RenPy SDK установлен"
+          echo "RenPy SDK OK"
 
-      - name: Скачать Renios
+      - name: Install Renios 8.0.1
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
 
-          echo "=== RENIOS ==="
+          echo "=== DOWNLOAD RENIOS 8.0.1 ==="
 
           curl -L --fail \
             -o renios.zip \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip
 
+          rm -rf "$RUNNER_TEMP/renpy-sdk/renios"
+
           unzip -q -o renios.zip \
-            -d renpy-sdk
+            -d "$RUNNER_TEMP/renpy-sdk"
 
-          test -d "$RUNNER_TEMP/renpy-sdk/renios"
+          echo "=== CHECK RENIOS STRUCTURE ==="
 
-          echo "Renios установлен"
+          if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios" ]; then
+            echo "ERROR: renios directory not found"
+            find "$RUNNER_TEMP/renpy-sdk" -maxdepth 2 -type d | sort
+            exit 1
+          fi
 
-      - name: Скачать APK из Release
+          if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios/buildlib" ]; then
+            echo "ERROR: renios/buildlib not found"
+            echo "Actual structure:"
+            find "$RUNNER_TEMP/renpy-sdk/renios" -maxdepth 3 -type d | sort
+            exit 1
+          fi
+
+          if [ ! -f "$RUNNER_TEMP/renpy-sdk/renios/buildlib/renios/interface.py" ]; then
+            echo "ERROR: renios.interface not found"
+            echo "Actual files:"
+            find "$RUNNER_TEMP/renpy-sdk/renios" -maxdepth 4 -type f | sort | head -200
+            exit 1
+          fi
+
+          echo "Renios structure OK"
+
+      - name: Verify RenPy iOS support
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== VERIFY RENIOS IMPORT ==="
+
+          ./renpy.sh -c \
+            "import sys; sys.path.insert(0, 'renios/buildlib'); import renios.interface; print('renios.interface: OK')"
+
+      - name: Download APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -76,7 +100,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/apk"
           mkdir -p "$RUNNER_TEMP/apk"
 
-          echo "=== RELEASE mybestdeal47 ==="
+          echo "=== DOWNLOAD APK FROM RELEASE ==="
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -89,34 +113,35 @@ jobs:
             | head -1)
 
           if [ -z "$APK" ]; then
-            echo "ОШИБКА: APK не найден"
+            echo "ERROR: APK not found"
             exit 1
           fi
 
-          echo "APK найден:"
+          echo "APK:"
           echo "$APK"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
-      - name: Распаковать APK
+      - name: Extract APK
         run: |
           set -e
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
+
           mkdir -p "$RUNNER_TEMP/apk-extracted"
 
-          echo "=== РАСПАКОВКА APK ==="
+          echo "=== EXTRACT APK ==="
 
           unzip -q -o "$APK" \
             -d "$RUNNER_TEMP/apk-extracted"
 
-          echo "APK успешно распакован"
+          echo "APK extracted"
 
-      - name: Найти x-game
+      - name: Find x-game
         run: |
           set -e
 
-          echo "=== ПОИСК x-game ==="
+          echo "=== FIND x-game ==="
 
           GAME=$(find "$RUNNER_TEMP/apk-extracted" \
             -type d \
@@ -124,26 +149,31 @@ jobs:
             | head -1)
 
           if [ -z "$GAME" ]; then
-            echo "ОШИБКА: x-game не найден"
+            echo "ERROR: x-game not found"
+
+            find "$RUNNER_TEMP/apk-extracted" \
+              -maxdepth 5 \
+              -type d \
+              | sort
+
             exit 1
           fi
 
-          echo "x-game найден:"
+          echo "x-game found:"
           echo "$GAME"
 
           rm -rf "$GITHUB_WORKSPACE/game"
+
           mkdir -p "$GITHUB_WORKSPACE/game"
 
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
-          echo "Игра скопирована"
-
-      - name: Проверить игру
+      - name: Verify game
         run: |
           set -e
 
-          echo "=== ПРОВЕРКА ИГРЫ ==="
+          echo "=== VERIFY GAME ==="
 
           RPYC=$(find "$GITHUB_WORKSPACE/game" \
             -type f \
@@ -151,10 +181,10 @@ jobs:
             | wc -l \
             | tr -d ' ')
 
-          echo "RPYC файлов: $RPYC"
+          echo "RPYC count: $RPYC"
 
           if [ "$RPYC" -eq 0 ]; then
-            echo "ОШИБКА: RPYC не найдены"
+            echo "ERROR: No RPYC files found"
             exit 1
           fi
 
@@ -168,47 +198,35 @@ jobs:
 
           cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
 
-      - name: Проверить RenPy
+      - name: Create iOS project
         run: |
           set -e
 
-          cd "$RUNNER_TEMP/renpy-sdk"
-
-          echo "=== RENPY CHECK ==="
-
-          ./renpy.sh --version || true
-
-          "$RUNNER_TEMP/venv/bin/python" \
-            -c "import future; print('future: OK')"
-
-      - name: Создать iOS проект
-        run: |
-          set -e
+          echo "=== IOS CREATE ==="
 
           rm -rf "$RUNNER_TEMP/ios-project"
+
           mkdir -p "$RUNNER_TEMP/ios-project"
 
           cd "$RUNNER_TEMP/renpy-sdk"
-
-          echo "=== IOS CREATE ==="
 
           ./renpy.sh launcher ios_create \
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
 
-      - name: Заполнить iOS проект
+      - name: Populate iOS project
         run: |
           set -e
 
-          cd "$RUNNER_TEMP/renpy-sdk"
-
           echo "=== IOS POPULATE ==="
+
+          cd "$RUNNER_TEMP/renpy-sdk"
 
           ./renpy.sh launcher ios_populate \
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
 
-      - name: Проверить Xcode проект
+      - name: Verify Xcode project
         run: |
           set -e
 
@@ -219,7 +237,7 @@ jobs:
             \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
             -print
 
-      - name: Загрузить iOS проект
+      - name: Upload iOS project
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-iOS

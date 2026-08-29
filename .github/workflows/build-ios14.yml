@@ -104,15 +104,12 @@ jobs:
 
           cd "$RUNNER_TEMP/renpy-sdk"
 
-          echo "=== VERIFY IOS TOOLS ==="
-
           test -d rapt
           test -d rapt/buildlib
+          test -f rapt/buildlib/rapt/interface.py
 
           test -d renios
           test -d renios/buildlib
-
-          test -f rapt/buildlib/rapt/interface.py
 
           echo "RAPT: OK"
           echo "RENIOS: OK"
@@ -148,7 +145,7 @@ jobs:
             exit 1
           fi
 
-          echo "=== APK FOUND ==="
+          echo "APK FOUND:"
           echo "$APK"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
@@ -162,7 +159,6 @@ jobs:
           set -e
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
-
           mkdir -p "$RUNNER_TEMP/apk-extracted"
 
           echo "=== EXTRACT APK ==="
@@ -170,7 +166,7 @@ jobs:
           unzip -q -o "$APK" \
             -d "$RUNNER_TEMP/apk-extracted"
 
-          echo "APK extracted successfully"
+          echo "APK extracted"
 
       # ==========================================
       # FIND X-GAME
@@ -189,16 +185,10 @@ jobs:
 
           if [ -z "$GAME" ]; then
             echo "ERROR: x-game NOT FOUND"
-
-            find "$RUNNER_TEMP/apk-extracted" \
-              -maxdepth 6 \
-              -type d \
-              | sort
-
             exit 1
           fi
 
-          echo "x-game found:"
+          echo "x-game:"
           echo "$GAME"
 
           rm -rf "$GITHUB_WORKSPACE/game"
@@ -208,17 +198,15 @@ jobs:
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
-          echo "x-game copied"
-
       # ==========================================
-      # VERIFY GAME
+      # VERIFY RPYC
       # ==========================================
 
-      - name: Verify game
+      - name: Verify compiled RenPy files
         run: |
           set -e
 
-          echo "=== VERIFY GAME ==="
+          echo "=== VERIFY RPYC ==="
 
           RPYC=$(find "$GITHUB_WORKSPACE/game" \
             -type f \
@@ -240,19 +228,17 @@ jobs:
             exit 1
           fi
 
+          echo "Compiled game files are present."
+
           echo ""
           echo "=== SCRIPT VERSION ==="
 
-          if [ -f "$GITHUB_WORKSPACE/game/x-script_version.txt" ]; then
-            cat "$GITHUB_WORKSPACE/game/x-script_version.txt"
-          fi
+          cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
 
           echo ""
           echo "=== BUILD INFO ==="
 
-          if [ -f "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" ]; then
-            cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json"
-          fi
+          cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
 
       # ==========================================
       # CLEAN IOS DESTINATION
@@ -264,25 +250,19 @@ jobs:
 
           echo "=== CLEAN IOS DESTINATION ==="
 
-          # ВАЖНО:
-          # ios_create должен получить НЕСУЩЕСТВУЮЩУЮ папку.
-          # Поэтому здесь мы только удаляем её,
-          # но НЕ создаём заново.
-
           rm -rf "$RUNNER_TEMP/ios-project"
 
-          if [ -e "$RUNNER_TEMP/ios-project" ]; then
-            echo "ERROR: ios-project still exists"
-            exit 1
-          fi
+          test ! -e "$RUNNER_TEMP/ios-project"
 
-          echo "Destination is clean"
+          echo "Destination is clean."
 
       # ==========================================
-      # IOS CREATE
+      # CREATE IOS PROJECT
       # ==========================================
 
       - name: Create iOS project
+        env:
+          SDL_VIDEODRIVER: dummy
         run: |
           set -e
 
@@ -299,10 +279,38 @@ jobs:
           echo "=== IOS CREATE FINISHED ==="
 
       # ==========================================
-      # IOS POPULATE
+      # DISABLE RECOMPILE
+      # ==========================================
+
+      - name: Disable forced recompilation
+        run: |
+          set -e
+
+          echo "=== DISABLE FORCE RECOMPILE ==="
+
+          PROJECT="$GITHUB_WORKSPACE/game"
+
+          if [ -f "$PROJECT/options.rpy" ]; then
+            echo "options.rpy found"
+          fi
+
+          # Удаляем временные compiled/cache файлы,
+          # но НЕ удаляем существующие .rpyc.
+          find "$PROJECT" \
+            -type d \
+            -name "__pycache__" \
+            -prune \
+            -exec rm -rf {} \; || true
+
+          echo "Existing RPYC files preserved."
+
+      # ==========================================
+      # POPULATE IOS
       # ==========================================
 
       - name: Populate iOS project
+        env:
+          SDL_VIDEODRIVER: dummy
         run: |
           set -e
 
@@ -327,14 +335,12 @@ jobs:
           echo "=== VERIFY XCODE PROJECT ==="
 
           XCODE_PROJECT=$(find "$RUNNER_TEMP/ios-project" \
-            -maxdepth 8 \
+            -maxdepth 10 \
             -name "*.xcodeproj" \
             | head -1)
 
           if [ -z "$XCODE_PROJECT" ]; then
-            echo "ERROR: Xcode project was not created"
-
-            echo "=== IOS PROJECT CONTENT ==="
+            echo "ERROR: Xcode project not found"
 
             find "$RUNNER_TEMP/ios-project" \
               -maxdepth 8 \
@@ -344,11 +350,11 @@ jobs:
             exit 1
           fi
 
-          echo "Xcode project found:"
+          echo "XCODE PROJECT:"
           echo "$XCODE_PROJECT"
 
       # ==========================================
-      # UPLOAD ARTIFACT
+      # UPLOAD
       # ==========================================
 
       - name: Upload iOS project

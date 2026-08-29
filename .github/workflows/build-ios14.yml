@@ -12,28 +12,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ==========================================
+      # RENPY SDK
+      # ==========================================
+
       - name: Download RenPy 8.0.1 SDK
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
 
+          echo "=== DOWNLOAD RENPY 8.0.1 ==="
+
           curl -L --fail \
             -o renpy-sdk.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
-          rm -rf renpy-sdk
-          mkdir -p renpy-sdk
+          rm -rf "$RUNNER_TEMP/renpy-sdk"
+
+          mkdir -p "$RUNNER_TEMP/renpy-sdk"
 
           tar -xjf renpy-sdk.tar.bz2 \
             --strip-components=1 \
-            -C renpy-sdk
+            -C "$RUNNER_TEMP/renpy-sdk"
 
-          test -f renpy-sdk/renpy.sh
+          test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
-          chmod +x renpy-sdk/renpy.sh
+          chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
           echo "=== RENPY SDK OK ==="
+
+      # ==========================================
+      # RAPT
+      # ==========================================
 
       - name: Install RAPT 8.0.1
         run: |
@@ -53,17 +64,20 @@ jobs:
             -d "$RUNNER_TEMP/renpy-sdk"
 
           if [ ! -d "$RUNNER_TEMP/renpy-sdk/rapt" ]; then
-            echo "ERROR: rapt directory not found"
-            find "$RUNNER_TEMP/renpy-sdk" -maxdepth 2 -type d | sort
+            echo "ERROR: RAPT was not installed"
             exit 1
           fi
 
           echo "=== RAPT OK ==="
 
           find "$RUNNER_TEMP/renpy-sdk/rapt" \
-            -maxdepth 2 \
+            -maxdepth 3 \
             -type f \
-            | head -30
+            | head -50
+
+      # ==========================================
+      # RENIOS
+      # ==========================================
 
       - name: Install Renios 8.0.1
         run: |
@@ -83,7 +97,7 @@ jobs:
             -d "$RUNNER_TEMP/renpy-sdk"
 
           if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios" ]; then
-            echo "ERROR: renios directory not found"
+            echo "ERROR: RENIOS was not installed"
             exit 1
           fi
 
@@ -94,16 +108,45 @@ jobs:
 
           echo "=== RENIOS OK ==="
 
-      - name: Download APK
+      # ==========================================
+      # CHECK IOS TOOLS
+      # ==========================================
+
+      - name: Verify iOS tools
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== VERIFY IOS TOOLS ==="
+
+          test -d rapt
+          test -d rapt/buildlib
+
+          test -d renios
+          test -d renios/buildlib
+
+          test -f rapt/buildlib/rapt/interface.py
+
+          echo "RAPT: OK"
+          echo "RENIOS: OK"
+
+      # ==========================================
+      # DOWNLOAD APK
+      # ==========================================
+
+      - name: Download APK from Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
 
           rm -rf "$RUNNER_TEMP/apk"
+
           mkdir -p "$RUNNER_TEMP/apk"
 
-          echo "=== RELEASE mybestdeal47 ==="
+          echo "=== DOWNLOAD APK ==="
+          echo "Release: mybestdeal47"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -116,20 +159,25 @@ jobs:
             | head -1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: APK not found"
+            echo "ERROR: APK NOT FOUND"
             exit 1
           fi
 
+          echo "=== APK FOUND ==="
+          echo "$APK"
+
           echo "APK=$APK" >> "$GITHUB_ENV"
 
-          echo "APK FOUND:"
-          echo "$APK"
+      # ==========================================
+      # EXTRACT APK
+      # ==========================================
 
       - name: Extract APK
         run: |
           set -e
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
+
           mkdir -p "$RUNNER_TEMP/apk-extracted"
 
           echo "=== EXTRACT APK ==="
@@ -137,7 +185,11 @@ jobs:
           unzip -q -o "$APK" \
             -d "$RUNNER_TEMP/apk-extracted"
 
-          echo "APK extracted"
+          echo "APK extracted successfully"
+
+      # ==========================================
+      # FIND X-GAME
+      # ==========================================
 
       - name: Find x-game
         run: |
@@ -151,10 +203,12 @@ jobs:
             | head -1)
 
           if [ -z "$GAME" ]; then
-            echo "ERROR: x-game not found"
+            echo "ERROR: x-game NOT FOUND"
+
+            echo "=== APK DIRECTORIES ==="
 
             find "$RUNNER_TEMP/apk-extracted" \
-              -maxdepth 5 \
+              -maxdepth 6 \
               -type d \
               | sort
 
@@ -171,11 +225,22 @@ jobs:
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
+          echo "x-game copied to game/"
+
+      # ==========================================
+      # VERIFY GAME
+      # ==========================================
+
       - name: Verify game
         run: |
           set -e
 
           echo "=== VERIFY GAME ==="
+
+          if [ ! -d "$GITHUB_WORKSPACE/game" ]; then
+            echo "ERROR: game directory not found"
+            exit 1
+          fi
 
           RPYC=$(find "$GITHUB_WORKSPACE/game" \
             -type f \
@@ -183,37 +248,63 @@ jobs:
             | wc -l \
             | tr -d ' ')
 
+          RPA=$(find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpa" \
+            | wc -l \
+            | tr -d ' ')
+
           echo "RPYC COUNT: $RPYC"
+          echo "RPA COUNT: $RPA"
 
           if [ "$RPYC" -eq 0 ]; then
-            echo "ERROR: RPYC files not found"
+            echo "ERROR: No RPYC files found"
             exit 1
           fi
 
           echo ""
           echo "=== SCRIPT VERSION ==="
 
-          cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
+          if [ -f "$GITHUB_WORKSPACE/game/x-script_version.txt" ]; then
+            cat "$GITHUB_WORKSPACE/game/x-script_version.txt"
+          fi
 
           echo ""
           echo "=== BUILD INFO ==="
 
-          cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
+          if [ -f "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" ]; then
+            cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json"
+          fi
 
-      - name: Verify iOS tools
+      # ==========================================
+      # CLEAN OLD IOS PROJECT
+      # ==========================================
+
+      - name: Clean old iOS project
         run: |
           set -e
 
-          cd "$RUNNER_TEMP/renpy-sdk"
+          echo "=== CLEAN IOS PROJECT ==="
 
-          echo "=== IOS TOOLS ==="
+          rm -rf "$RUNNER_TEMP/ios-project"
 
-          test -d rapt
-          test -d renios
-          test -d renios/buildlib
+          mkdir -p "$RUNNER_TEMP/ios-project"
 
-          echo "RAPT: OK"
-          echo "RENIOS: OK"
+          # Удаляем возможные старые Xcode проекты
+          find "$GITHUB_WORKSPACE" \
+            -maxdepth 4 \
+            \( \
+              -name "*.xcodeproj" \
+              -o -name "*.xcworkspace" \
+            \) \
+            -print \
+            -exec rm -rf {} \;
+
+          echo "Old iOS projects removed"
+
+      # ==========================================
+      # IOS CREATE
+      # ==========================================
 
       - name: Create iOS project
         run: |
@@ -221,15 +312,19 @@ jobs:
 
           echo "=== IOS CREATE ==="
 
-          rm -rf "$RUNNER_TEMP/ios-project"
-
-          mkdir -p "$RUNNER_TEMP/ios-project"
-
           cd "$RUNNER_TEMP/renpy-sdk"
+
+          chmod +x renpy.sh
 
           ./renpy.sh launcher ios_create \
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
+
+          echo "=== IOS CREATE FINISHED ==="
+
+      # ==========================================
+      # IOS POPULATE
+      # ==========================================
 
       - name: Populate iOS project
         run: |
@@ -243,16 +338,42 @@ jobs:
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
 
+          echo "=== IOS POPULATE FINISHED ==="
+
+      # ==========================================
+      # VERIFY XCODE
+      # ==========================================
+
       - name: Verify Xcode project
         run: |
           set -e
 
-          echo "=== XCODE PROJECT ==="
+          echo "=== VERIFY XCODE PROJECT ==="
 
-          find "$RUNNER_TEMP/ios-project" \
-            -maxdepth 6 \
-            \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
-            -print
+          XCODE_PROJECT=$(find "$RUNNER_TEMP/ios-project" \
+            -maxdepth 8 \
+            -name "*.xcodeproj" \
+            | head -1)
+
+          if [ -z "$XCODE_PROJECT" ]; then
+            echo "ERROR: Xcode project was not created"
+
+            echo "=== IOS PROJECT CONTENT ==="
+
+            find "$RUNNER_TEMP/ios-project" \
+              -maxdepth 8 \
+              -print \
+              | sort
+
+            exit 1
+          fi
+
+          echo "Xcode project found:"
+          echo "$XCODE_PROJECT"
+
+      # ==========================================
+      # UPLOAD
+      # ==========================================
 
       - name: Upload iOS project
         uses: actions/upload-artifact@v4

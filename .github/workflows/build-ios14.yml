@@ -15,63 +15,48 @@ jobs:
       - name: Download RenPy 8.0.1
         run: |
           set -e
-
           cd "$RUNNER_TEMP"
 
           curl -L --fail \
-            -o renpy-sdk.tar.bz2 \
+            -o renpy.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
           rm -rf "$RUNNER_TEMP/renpy-sdk"
           mkdir -p "$RUNNER_TEMP/renpy-sdk"
 
-          tar -xjf renpy-sdk.tar.bz2 \
+          tar -xjf renpy.tar.bz2 \
             --strip-components=1 \
             -C "$RUNNER_TEMP/renpy-sdk"
 
           chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
-          test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
-
-          echo "=== RENPY OK ==="
-
-      - name: Install RAPT 8.0.1
+      - name: Install RAPT
         run: |
           set -e
-
           cd "$RUNNER_TEMP"
 
           curl -L --fail \
             -o rapt.zip \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-rapt.zip
 
-          rm -rf "$RUNNER_TEMP/renpy-sdk/rapt"
-
           unzip -q -o rapt.zip \
             -d "$RUNNER_TEMP/renpy-sdk"
 
           test -f "$RUNNER_TEMP/renpy-sdk/rapt/buildlib/rapt/interface.py"
 
-          echo "=== RAPT OK ==="
-
-      - name: Install Renios 8.0.1
+      - name: Install Renios
         run: |
           set -e
-
           cd "$RUNNER_TEMP"
 
           curl -L --fail \
             -o renios.zip \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip
 
-          rm -rf "$RUNNER_TEMP/renpy-sdk/renios"
-
           unzip -q -o renios.zip \
             -d "$RUNNER_TEMP/renpy-sdk"
 
           test -d "$RUNNER_TEMP/renpy-sdk/renios"
-
-          echo "=== RENIOS OK ==="
 
       - name: Download APK
         env:
@@ -81,9 +66,6 @@ jobs:
 
           rm -rf "$RUNNER_TEMP/apk"
           mkdir -p "$RUNNER_TEMP/apk"
-
-          echo "=== DOWNLOAD APK ==="
-          echo "Release: mybestdeal47"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -95,13 +77,7 @@ jobs:
             -iname "*.apk" \
             | head -1)
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK NOT FOUND"
-            exit 1
-          fi
-
-          echo "APK FOUND:"
-          echo "$APK"
+          test -n "$APK"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
@@ -112,29 +88,19 @@ jobs:
           rm -rf "$RUNNER_TEMP/apk-extracted"
           mkdir -p "$RUNNER_TEMP/apk-extracted"
 
-          echo "=== EXTRACT APK ==="
-
           unzip -q -o "$APK" \
             -d "$RUNNER_TEMP/apk-extracted"
 
-      - name: Find and copy x-game
+      - name: Prepare game
         run: |
           set -e
-
-          echo "=== FIND x-game ==="
 
           GAME=$(find "$RUNNER_TEMP/apk-extracted" \
             -type d \
             -name "x-game" \
             | head -1)
 
-          if [ -z "$GAME" ]; then
-            echo "ERROR: x-game NOT FOUND"
-            exit 1
-          fi
-
-          echo "FOUND:"
-          echo "$GAME"
+          test -n "$GAME"
 
           rm -rf "$GITHUB_WORKSPACE/game"
           mkdir -p "$GITHUB_WORKSPACE/game"
@@ -142,51 +108,20 @@ jobs:
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
-      - name: Verify game
-        run: |
-          set -e
+          echo "=== RPYC COUNT ==="
 
-          echo "=== GAME CHECK ==="
-
-          RPYC=$(find "$GITHUB_WORKSPACE/game" \
+          find "$GITHUB_WORKSPACE/game" \
             -type f \
             -name "*.rpyc" \
-            | wc -l \
-            | tr -d ' ')
-
-          RPA=$(find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpa" \
-            | wc -l \
-            | tr -d ' ')
-
-          echo "RPYC: $RPYC"
-          echo "RPA: $RPA"
-
-          if [ "$RPYC" -eq 0 ]; then
-            echo "ERROR: NO RPYC FILES"
-            exit 1
-          fi
-
-          echo ""
-          echo "=== VERSION ==="
-
-          cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
-
-          echo ""
-          echo "=== BUILD INFO ==="
-
-          cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
+            | wc -l
 
       # ==========================================
-      # PATCH ACTUAL RenPy iOS BUILDER
+      # PATCH IOS CREATE
       # ==========================================
 
-      - name: Patch iOS builder
+      - name: Patch RenPy iOS builder
         run: |
           set -e
-
-          echo "=== FIND IOS.RPY ==="
 
           IOS=$(find "$RUNNER_TEMP/renpy-sdk" \
             -type f \
@@ -194,17 +129,15 @@ jobs:
             | head -1)
 
           if [ -z "$IOS" ]; then
-            echo "ERROR: ios.rpy NOT FOUND"
-
+            echo "ERROR: ios.rpy not found"
             find "$RUNNER_TEMP/renpy-sdk" \
               -type f \
               -name "ios.rpy" \
               -print
-
             exit 1
           fi
 
-          echo "IOS.RPY:"
+          echo "=== PATCHING ==="
           echo "$IOS"
 
           cp "$IOS" "$IOS.backup"
@@ -217,22 +150,47 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               data = f.read()
 
-          old = "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])"
-          new = "project.update_dump(force=False, gui=False, compile=False)"
+          # -------------------------------------------------
+          # ios_create():
+          #
+          # ORIGINAL:
+          # p.update_dump(force=True, gui=gui)
+          #
+          # REPLACE:
+          # p.update_dump(force=False, gui=gui)
+          # -------------------------------------------------
 
-          if old in data:
-              data = data.replace(old, new)
-              print("=== PATCH APPLIED ===")
+          old1 = "p.update_dump(force=True, gui=gui)"
+          new1 = "p.update_dump(force=False, gui=gui)"
+
+          if old1 in data:
+              data = data.replace(old1, new1, 1)
+              print("PATCH 1 APPLIED")
           else:
-              print("=== TARGET LINE NOT FOUND ===")
-              print("Existing update_dump lines:")
+              print("PATCH 1 NOT FOUND")
 
-              for line in data.splitlines():
-                  if "update_dump" in line:
-                      print(line)
+          # -------------------------------------------------
+          # Distributor:
+          #
+          # ORIGINAL:
+          # project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])
+          #
+          # REPLACE:
+          # project.update_dump(force=False, gui=False, compile=False)
+          # -------------------------------------------------
+
+          old2 = "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])"
+          new2 = "project.update_dump(force=False, gui=False, compile=False)"
+
+          if old2 in data:
+              data = data.replace(old2, new2, 1)
+              print("PATCH 2 APPLIED")
+          else:
+              print("PATCH 2 NOT FOUND")
 
           with open(path, "w", encoding="utf-8") as f:
               f.write(data)
+
           PY
 
           echo "=== PATCH CHECK ==="
@@ -251,10 +209,8 @@ jobs:
 
           test ! -e "$RUNNER_TEMP/ios-project"
 
-          echo "=== IOS DESTINATION CLEAN ==="
-
       # ==========================================
-      # CREATE IOS
+      # CREATE XCODE PROJECT
       # ==========================================
 
       - name: Create iOS project
@@ -275,7 +231,7 @@ jobs:
           echo "=== IOS CREATE FINISHED ==="
 
       # ==========================================
-      # VERIFY XCODE
+      # VERIFY
       # ==========================================
 
       - name: Verify Xcode project
@@ -294,8 +250,7 @@ jobs:
 
             find "$RUNNER_TEMP/ios-project" \
               -maxdepth 8 \
-              -print \
-              | sort
+              -print
 
             exit 1
           fi
@@ -304,7 +259,7 @@ jobs:
           echo "$PROJECT"
 
       # ==========================================
-      # UPLOAD
+      # ARTIFACT
       # ==========================================
 
       - name: Upload iOS project

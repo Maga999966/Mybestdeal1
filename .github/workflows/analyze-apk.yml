@@ -1,4 +1,26 @@
-      - name: Найти Release и скачать APK
+name: Analyze My Best Deal APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Скачать репозиторий
+        uses: actions/checkout@v4
+
+      - name: Установить инструменты
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y unzip
+
+      - name: Скачать APK из Release mybestdeal47
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -6,35 +28,133 @@
 
           mkdir -p apk
 
-          echo "=== ВСЕ RELEASE ==="
-          gh release list --repo "${{ github.repository }}" --limit 20
+          echo "=== СКАЧИВАЕМ APK ИЗ RELEASE mybestdeal47 ==="
+
+          gh release download mybestdeal47 \
+            --pattern "*.apk" \
+            --dir apk \
+            --repo "${{ github.repository }}"
 
           echo ""
-          echo "=== ПОИСК APK В RELEASE ==="
+          echo "=== СКАЧАННЫЕ ФАЙЛЫ ==="
+          ls -lh apk
 
-          gh release list \
-            --repo "${{ github.repository }}" \
-            --limit 20 \
-            --json tagName,name,isDraft,isPrerelease \
-            --jq '.[] | "\(.tagName) | \(.name)"'
+      - name: Распаковать APK
+        run: |
+          set -e
+
+          APK=$(find apk -type f -iname "*.apk" | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ОШИБКА: APK не найден"
+            exit 1
+          fi
+
+          echo "Найден APK:"
+          echo "$APK"
+
+          mkdir -p extracted
+
+          unzip -q "$APK" -d extracted
 
           echo ""
-          echo "=== ПРИКРЕПЛЁННЫЕ ФАЙЛЫ ==="
+          echo "=== APK УСПЕШНО РАСПАКОВАН ==="
 
-          for TAG in $(gh release list \
-            --repo "${{ github.repository }}" \
-            --limit 20 \
-            --json tagName \
-            --jq '.[].tagName'); do
+      - name: Найти структуру игры
+        run: |
+          set -e
+
+          echo "=== ПОИСК x-game ==="
+
+          GAME_DIR=$(find extracted -type d -name "x-game" | head -1 || true)
+
+          if [ -z "$GAME_DIR" ]; then
+            echo "x-game напрямую не найден."
+          else
+            echo "НАЙДЕНО:"
+            echo "$GAME_DIR"
 
             echo ""
-            echo "Release: $TAG"
-
-            gh release view "$TAG" \
-              --repo "${{ github.repository }}" \
-              --json assets \
-              --jq '.assets[].name' || true
-          done
+            echo "=== СОДЕРЖИМОЕ x-game ==="
+            find "$GAME_DIR" -maxdepth 3 -type f | sort | head -300
+          fi
 
           echo ""
-          echo "=== ГОТОВО ==="
+          echo "=== ПОИСК assets ==="
+          find extracted -type d -name "assets" -print
+
+          echo ""
+          echo "=== ПОИСК x-script_version.txt ==="
+          find extracted -type f -name "x-script_version.txt" -print
+
+          echo ""
+          echo "=== ПОИСК x-build_info.json ==="
+          find extracted -type f -name "x-build_info.json" -print
+
+          echo ""
+          echo "=== RENPY LIBRARIES ==="
+          find extracted -type f -name "librenpython.so" -print
+
+          echo ""
+          echo "=== DEX FILES ==="
+          find extracted -type f -name "*.dex" -print
+
+          echo ""
+          echo "=== RPYC COUNT ==="
+          find extracted -type f -name "*.rpyc" | wc -l
+
+          echo ""
+          echo "=== RPA COUNT ==="
+          find extracted -type f -name "*.rpa" | wc -l
+
+      - name: Создать отчёт
+        run: |
+          set -e
+
+          mkdir -p result
+
+          echo "MY BEST DEAL 4.7" > result/report.txt
+          echo "================" >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== x-game ===" >> result/report.txt
+          find extracted -type d -name "x-game" \
+            >> result/report.txt || true
+
+          echo "" >> result/report.txt
+          echo "=== SCRIPT VERSION ===" >> result/report.txt
+          find extracted -type f -name "x-script_version.txt" \
+            -exec sh -c 'echo "FILE: $1"; cat "$1"' _ {} \; \
+            >> result/report.txt || true
+
+          echo "" >> result/report.txt
+          echo "=== BUILD INFO ===" >> result/report.txt
+          find extracted -type f -name "x-build_info.json" \
+            -exec sh -c 'echo "FILE: $1"; cat "$1"' _ {} \; \
+            >> result/report.txt || true
+
+          echo "" >> result/report.txt
+          echo "=== RENPY LIBRARIES ===" >> result/report.txt
+          find extracted -type f -name "librenpython.so" \
+            >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPYC COUNT ===" >> result/report.txt
+          find extracted -type f -name "*.rpyc" | wc -l \
+            >> result/report.txt
+
+          echo "" >> result/report.txt
+          echo "=== RPA COUNT ===" >> result/report.txt
+          find extracted -type f -name "*.rpa" | wc -l \
+            >> result/report.txt
+
+          echo ""
+          echo "=== РЕЗУЛЬТАТ ==="
+          cat result/report.txt
+
+      - name: Загрузить отчёт
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybestdeal-analysis
+          path: result/report.txt
+          

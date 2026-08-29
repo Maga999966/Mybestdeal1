@@ -12,6 +12,13 @@ jobs:
       - name: Скачать репозиторий
         uses: actions/checkout@v4
 
+      - name: Установить Python-зависимости
+        run: |
+          set -e
+
+          python3 -m pip install --upgrade pip
+          python3 -m pip install future
+
       - name: Скачать RenPy 8.0.1
         run: |
           set -e
@@ -118,12 +125,6 @@ jobs:
 
           if [ -z "$GAME" ]; then
             echo "ОШИБКА: x-game не найден"
-            echo ""
-            echo "Доступные каталоги:"
-            find "$RUNNER_TEMP/apk-extracted" \
-              -maxdepth 4 \
-              -type d \
-              | sort
             exit 1
           fi
 
@@ -163,17 +164,29 @@ jobs:
             exit 1
           fi
 
-          if [ -f "$GITHUB_WORKSPACE/game/x-script_version.txt" ]; then
-            echo ""
-            echo "=== ВЕРСИЯ ==="
-            cat "$GITHUB_WORKSPACE/game/x-script_version.txt"
-          fi
+          echo ""
+          echo "=== ВЕРСИЯ ==="
 
-          if [ -f "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" ]; then
-            echo ""
-            echo "=== BUILD INFO ==="
-            cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json"
-          fi
+          cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
+
+          echo ""
+          echo "=== BUILD INFO ==="
+
+          cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
+
+      - name: Проверить RenPy
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== RENPY CHECK ==="
+
+          python3 renpy.py --version || true
+
+          python3 -c "import future; print('future: OK')"
+
+          python3 -c "import renpy; print('renpy: OK')"
 
       - name: Создать iOS проект
         run: |
@@ -182,9 +195,9 @@ jobs:
           rm -rf "$RUNNER_TEMP/ios-project"
           mkdir -p "$RUNNER_TEMP/ios-project"
 
-          echo "=== IOS CREATE ==="
-
           cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== IOS CREATE ==="
 
           python3 renpy.py launcher ios_create \
             "$GITHUB_WORKSPACE" \
@@ -194,9 +207,9 @@ jobs:
         run: |
           set -e
 
-          echo "=== IOS POPULATE ==="
-
           cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== IOS POPULATE ==="
 
           python3 renpy.py launcher ios_populate \
             "$GITHUB_WORKSPACE" \
@@ -206,21 +219,12 @@ jobs:
         run: |
           set -e
 
-          echo "=== ПОИСК XCODE ПРОЕКТА ==="
+          echo "=== XCODE PROJECT ==="
 
           find "$RUNNER_TEMP/ios-project" \
             -maxdepth 6 \
             \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
             -print
-
-          echo ""
-          echo "=== СОДЕРЖИМОЕ IOS PROJECT ==="
-
-          find "$RUNNER_TEMP/ios-project" \
-            -maxdepth 3 \
-            -type f \
-            | sort \
-            | head -300
 
       - name: Загрузить iOS проект
         uses: actions/upload-artifact@v4

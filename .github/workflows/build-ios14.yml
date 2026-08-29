@@ -17,17 +17,18 @@ jobs:
           set -e
 
           python3 -m venv "$RUNNER_TEMP/venv"
-
           "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/venv/bin/python" -m pip install future
 
-          echo "PYTHON=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
+          echo "Python окружение готово"
 
       - name: Скачать RenPy 8.0.1
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
+
+          echo "=== RENPY 8.0.1 ==="
 
           curl -L --fail \
             -o renpy-sdk.tar.bz2 \
@@ -41,14 +42,19 @@ jobs:
             -C renpy-sdk
 
           test -f "$RUNNER_TEMP/renpy-sdk/renpy.py"
+          test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
 
-          echo "RenPy SDK OK"
+          chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+
+          echo "RenPy SDK установлен"
 
       - name: Скачать Renios
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
+
+          echo "=== RENIOS ==="
 
           curl -L --fail \
             -o renios.zip \
@@ -59,7 +65,7 @@ jobs:
 
           test -d "$RUNNER_TEMP/renpy-sdk/renios"
 
-          echo "Renios OK"
+          echo "Renios установлен"
 
       - name: Скачать APK из Release
         env:
@@ -131,6 +137,8 @@ jobs:
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
+          echo "Игра скопирована"
+
       - name: Проверить игру
         run: |
           set -e
@@ -150,10 +158,14 @@ jobs:
             exit 1
           fi
 
-          echo "=== ВЕРСИЯ ==="
+          echo ""
+          echo "=== SCRIPT VERSION ==="
+
           cat "$GITHUB_WORKSPACE/game/x-script_version.txt" || true
 
+          echo ""
           echo "=== BUILD INFO ==="
+
           cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
 
       - name: Проверить RenPy
@@ -162,10 +174,12 @@ jobs:
 
           cd "$RUNNER_TEMP/renpy-sdk"
 
-          echo "=== ПРОВЕРКА RENPY ==="
+          echo "=== RENPY CHECK ==="
 
-          "$PYTHON" -c "import future; print('future: OK')"
-          "$PYTHON" -c "import renpy; print('renpy: OK')"
+          ./renpy.sh --version || true
+
+          "$RUNNER_TEMP/venv/bin/python" \
+            -c "import future; print('future: OK')"
 
       - name: Создать iOS проект
         run: |
@@ -178,7 +192,7 @@ jobs:
 
           echo "=== IOS CREATE ==="
 
-          "$PYTHON" renpy.py launcher ios_create \
+          ./renpy.sh launcher ios_create \
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
 
@@ -190,7 +204,7 @@ jobs:
 
           echo "=== IOS POPULATE ==="
 
-          "$PYTHON" renpy.py launcher ios_populate \
+          ./renpy.sh launcher ios_populate \
             "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/ios-project"
 

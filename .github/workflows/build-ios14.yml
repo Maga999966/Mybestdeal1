@@ -9,70 +9,118 @@ jobs:
 
     steps:
 
-      - name: Checkout
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ============================================================
+      # DOWNLOAD RENPY 8.0.1
+      # ============================================================
 
       - name: Download RenPy 8.0.1
         shell: bash
         run: |
           set -e
 
+          echo "=== DOWNLOAD RENPY 8.0.1 ==="
+
           cd "$RUNNER_TEMP"
 
+          rm -rf renpy-sdk
+          rm -f renpy-sdk.tar.bz2
+
           curl -L --fail \
-            -o renpy.tar.bz2 \
+            -o renpy-sdk.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
-          rm -rf "$RUNNER_TEMP/renpy-sdk"
+          mkdir -p renpy-sdk
 
-          mkdir -p "$RUNNER_TEMP/renpy-sdk"
-
-          tar -xjf renpy.tar.bz2 \
+          tar -xjf renpy-sdk.tar.bz2 \
             --strip-components=1 \
-            -C "$RUNNER_TEMP/renpy-sdk"
+            -C renpy-sdk
 
-          chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+          chmod +x renpy-sdk/renpy.sh
 
-          test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+          test -f renpy-sdk/renpy.sh
 
-          echo "=== RENPY OK ==="
+          echo "=== RENPY SDK OK ==="
 
-      - name: Install RAPT
+      # ============================================================
+      # DOWNLOAD RAPT
+      # ============================================================
+
+      - name: Download RAPT
         shell: bash
         run: |
           set -e
 
+          echo "=== DOWNLOAD RAPT ==="
+
           cd "$RUNNER_TEMP"
+
+          rm -f rapt.zip
 
           curl -L --fail \
             -o rapt.zip \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-rapt.zip
 
           unzip -q -o rapt.zip \
-            -d "$RUNNER_TEMP/renpy-sdk"
-
-          test -f \
-            "$RUNNER_TEMP/renpy-sdk/rapt/buildlib/rapt/interface.py"
+            -d renpy-sdk
 
           echo "=== RAPT OK ==="
 
-      - name: Install Renios
+      # ============================================================
+      # DOWNLOAD RENIOS
+      # ============================================================
+
+      - name: Download Renios
         shell: bash
         run: |
           set -e
 
+          echo "=== DOWNLOAD RENIOS ==="
+
           cd "$RUNNER_TEMP"
+
+          rm -f renios.zip
 
           curl -L --fail \
             -o renios.zip \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip
 
           unzip -q -o renios.zip \
-            -d "$RUNNER_TEMP/renpy-sdk"
+            -d renpy-sdk
+
+          test -d renpy-sdk/renios
+
+          echo "=== RENIOS OK ==="
+
+      # ============================================================
+      # CHECK RENPY IOS SUPPORT
+      # ============================================================
+
+      - name: Check RenPy iOS support
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== CHECK RENIOS ==="
 
           test -d "$RUNNER_TEMP/renpy-sdk/renios"
 
-          echo "=== RENIOS OK ==="
+          find "$RUNNER_TEMP/renpy-sdk/renios" \
+            -maxdepth 3 \
+            -type f \
+            | head -50
+
+          echo "=== RENIOS FOUND ==="
+
+      # ============================================================
+      # DOWNLOAD APK FROM RELEASE
+      # ============================================================
 
       - name: Download APK
         shell: bash
@@ -81,11 +129,10 @@ jobs:
         run: |
           set -e
 
-          rm -rf "$RUNNER_TEMP/apk"
-
-          mkdir -p "$RUNNER_TEMP/apk"
-
           echo "=== DOWNLOAD APK ==="
+
+          rm -rf "$RUNNER_TEMP/apk"
+          mkdir -p "$RUNNER_TEMP/apk"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -102,15 +149,21 @@ jobs:
             exit 1
           fi
 
-          echo "APK:"
+          echo "APK FOUND:"
           echo "$APK"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # EXTRACT APK
+      # ============================================================
 
       - name: Extract APK
         shell: bash
         run: |
           set -e
+
+          echo "=== EXTRACT APK ==="
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
 
@@ -121,12 +174,16 @@ jobs:
 
           echo "=== APK EXTRACTED ==="
 
-      - name: Prepare game
+      # ============================================================
+      # FIND X-GAME
+      # ============================================================
+
+      - name: Find x-game
         shell: bash
         run: |
           set -e
 
-          echo "=== FIND x-game ==="
+          echo "=== FIND X-GAME ==="
 
           GAME=$(find "$RUNNER_TEMP/apk-extracted" \
             -type d \
@@ -140,6 +197,19 @@ jobs:
 
           echo "FOUND:"
           echo "$GAME"
+
+          echo "GAME=$GAME" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # PREPARE RENPY GAME
+      # ============================================================
+
+      - name: Prepare RenPy game
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== PREPARE GAME ==="
 
           rm -rf "$GITHUB_WORKSPACE/game"
 
@@ -156,170 +226,61 @@ jobs:
             -name "*.rpyc" \
             | wc -l
 
-      # ==========================================
-      # FIND REAL RENPY FILES
-      # ==========================================
+          echo "RPA COUNT:"
+          find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpa" \
+            | wc -l
 
-      - name: Find RenPy builder files
+      # ============================================================
+      # REMOVE OLD XCODE PROJECTS FROM GAME
+      # ============================================================
+
+      - name: Remove old iOS projects
         shell: bash
         run: |
           set -e
 
-          echo "=== FIND ios.rpy ==="
+          echo "=== REMOVE OLD IOS PROJECTS ==="
 
-          IOS=$(find "$RUNNER_TEMP/renpy-sdk" \
+          find "$GITHUB_WORKSPACE" \
+            -type d \
+            \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
+            -prune \
+            -exec rm -rf {} \; \
+            2>/dev/null || true
+
+          rm -rf "$RUNNER_TEMP/ios-project"
+
+          echo "=== OLD PROJECTS REMOVED ==="
+
+      # ============================================================
+      # FIND IOS.RPY
+      # ============================================================
+
+      - name: Check iOS builder
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== CHECK IOS.RPY ==="
+
+          IOS_RPY=$(find "$RUNNER_TEMP/renpy-sdk" \
             -type f \
             -path "*/launcher/game/ios.rpy" \
             | head -1)
 
-          if [ -z "$IOS" ]; then
+          if [ -z "$IOS_RPY" ]; then
             echo "ERROR: ios.rpy NOT FOUND"
-
-            find "$RUNNER_TEMP/renpy-sdk" \
-              -type f \
-              -name "ios.rpy" \
-              -print
-
             exit 1
           fi
 
-          echo "IOS:"
-          echo "$IOS"
+          echo "IOS.RPY:"
+          echo "$IOS_RPY"
 
-          echo "IOS=$IOS" >> "$GITHUB_ENV"
-
-          echo "=== FIND distribute.rpy ==="
-
-          DISTRIBUTE=$(find "$RUNNER_TEMP/renpy-sdk" \
-            -type f \
-            -path "*/launcher/game/distribute.rpy" \
-            | head -1)
-
-          if [ -z "$DISTRIBUTE" ]; then
-            echo "ERROR: distribute.rpy NOT FOUND"
-            exit 1
-          fi
-
-          echo "DISTRIBUTE:"
-          echo "$DISTRIBUTE"
-
-          echo "DISTRIBUTE=$DISTRIBUTE" >> "$GITHUB_ENV"
-
-      # ==========================================
-      # PATCH DISTRIBUTE
-      # ==========================================
-
-      - name: Patch distribute.rpy
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== PATCH DISTRIBUTE ==="
-
-          cp "$DISTRIBUTE" "$DISTRIBUTE.backup"
-
-          python3 - "$DISTRIBUTE" <<'PY'
-          import sys
-
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              data = f.read()
-
-          old = "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])"
-
-          new = "project.update_dump(force=False, gui=False, compile=False)"
-
-          count = data.count(old)
-
-          print("Occurrences:", count)
-
-          if count:
-              data = data.replace(old, new)
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(data)
-
-          print("=== DISTRIBUTE PATCH DONE ===")
-          PY
-
-          echo "=== CHECK ==="
-
-          grep -n "update_dump" "$DISTRIBUTE" || true
-
-      # ==========================================
-      # PATCH IOS
-      # ==========================================
-
-      - name: Patch ios.rpy
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== PATCH IOS.RPY ==="
-
-          cp "$IOS" "$IOS.backup"
-
-          python3 - "$IOS" <<'PY'
-          import sys
-
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              data = f.read()
-
-          replacements = [
-              (
-                  "p.update_dump(force=True, gui=gui)",
-                  "p.update_dump(force=False, gui=gui)"
-              ),
-              (
-                  "p.update_dump(force=True, gui=False)",
-                  "p.update_dump(force=False, gui=False)"
-              ),
-              (
-                  "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])",
-                  "project.update_dump(force=False, gui=False, compile=False)"
-              )
-          ]
-
-          for old, new in replacements:
-
-              count = data.count(old)
-
-              print("Occurrences:", count)
-
-              if count:
-                  data = data.replace(old, new)
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(data)
-
-          print("=== IOS PATCH DONE ===")
-          PY
-
-          echo "=== CHECK IOS ==="
-
-          grep -n "update_dump" "$IOS" || true
-
-      # ==========================================
-      # CLEAN OLD PROJECT
-      # ==========================================
-
-      - name: Clean iOS destination
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf "$RUNNER_TEMP/ios-project"
-
-          mkdir -p "$RUNNER_TEMP/ios-project"
-
-          echo "=== DESTINATION CLEAN ==="
-
-      # ==========================================
-      # CREATE IOS PROJECT
-      # ==========================================
+      # ============================================================
+      # CREATE CLEAN IOS PROJECT
+      # ============================================================
 
       - name: Create iOS project
         shell: bash
@@ -328,50 +289,118 @@ jobs:
 
           echo "=== IOS CREATE ==="
 
+          IOS_OUT="$RUNNER_TEMP/ios-project"
+
+          # VERY IMPORTANT:
+          # destination must NOT exist before ios_create.
+
+          rm -rf "$IOS_OUT"
+
+          test ! -e "$IOS_OUT"
+
           cd "$RUNNER_TEMP/renpy-sdk"
 
-          ./renpy.sh launcher ios_create \
+          echo "SDK:"
+          pwd
+
+          echo "PROJECT:"
+          echo "$GITHUB_WORKSPACE"
+
+          echo "DESTINATION:"
+          echo "$IOS_OUT"
+
+          echo "=== RUN RENPY IOS_CREATE ==="
+
+          # RenPy 8.0.1 official command:
+          #
+          # ./renpy.sh launcher ios_create <basedir> <destination>
+          #
+          # yes is supplied only as a fallback for the
+          # old-project question.
+
+          yes yes | ./renpy.sh launcher ios_create \
             "$GITHUB_WORKSPACE" \
-            "$RUNNER_TEMP/ios-project"
+            "$IOS_OUT" || {
+              STATUS=$?
+
+              echo "RenPy returned: $STATUS"
+
+              if [ -d "$IOS_OUT" ]; then
+                echo "iOS project directory exists."
+              else
+                exit "$STATUS"
+              fi
+            }
 
           echo "=== IOS CREATE FINISHED ==="
 
-      # ==========================================
-      # VERIFY
-      # ==========================================
+      # ============================================================
+      # VERIFY XCODE PROJECT
+      # ============================================================
 
       - name: Verify Xcode project
         shell: bash
         run: |
           set -e
 
-          echo "=== VERIFY XCODE ==="
+          echo "=== VERIFY XCODE PROJECT ==="
 
-          PROJECT=$(find "$RUNNER_TEMP/ios-project" \
+          if [ ! -d "$RUNNER_TEMP/ios-project" ]; then
+            echo "ERROR: IOS PROJECT DIRECTORY NOT FOUND"
+            exit 1
+          fi
+
+          XCODE_PROJECT=$(find "$RUNNER_TEMP/ios-project" \
             -type d \
             -name "*.xcodeproj" \
             | head -1)
 
-          if [ -z "$PROJECT" ]; then
+          if [ -z "$XCODE_PROJECT" ]; then
             echo "ERROR: XCODE PROJECT NOT FOUND"
 
+            echo "FILES:"
             find "$RUNNER_TEMP/ios-project" \
-              -maxdepth 8 \
+              -maxdepth 6 \
               -print
 
             exit 1
           fi
 
-          echo "XCODE PROJECT FOUND:"
-          echo "$PROJECT"
+          echo "=== XCODE PROJECT FOUND ==="
+          echo "$XCODE_PROJECT"
 
-      # ==========================================
-      # UPLOAD
-      # ==========================================
+      # ============================================================
+      # ZIP IOS PROJECT
+      # ============================================================
+
+      - name: Archive iOS project
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== ARCHIVE IOS PROJECT ==="
+
+          cd "$RUNNER_TEMP"
+
+          rm -f MyBestDeal-4.7-iOS.zip
+
+          ditto -c -k \
+            --sequesterRsrc \
+            --keepParent \
+            ios-project \
+            MyBestDeal-4.7-iOS.zip
+
+          test -f MyBestDeal-4.7-iOS.zip
+
+          ls -lh MyBestDeal-4.7-iOS.zip
+
+      # ============================================================
+      # UPLOAD ARTIFACT
+      # ============================================================
 
       - name: Upload iOS project
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-iOS
-          path: ${{ runner.temp }}/ios-project/
+          path: ${{ runner.temp }}/MyBestDeal-4.7-iOS.zip
           if-no-files-found: error

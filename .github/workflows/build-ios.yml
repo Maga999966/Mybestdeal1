@@ -1,381 +1,154 @@
-name: My Best Deal 4.7 - iOS
+name: Build iOS - My Best Deal 4.7
 
 on:
   workflow_dispatch:
 
 jobs:
   build-ios:
-    name: Build iOS Xcode Project
-    runs-on: macos-14
+    name: Build My Best Deal 4.7 for iOS
+    runs-on: macos-13
 
     steps:
-
-      # ==========================================
-      # 1. КОД ИГРЫ
-      # ==========================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
-      # ==========================================
-      # 2. REN'PY 8.0.1
-      # ==========================================
-
-      - name: Download Ren'Py 8.0.1
-        shell: bash
+      - name: Show repository
         run: |
           set -e
 
-          echo "=== DOWNLOAD RENPY ==="
+          echo "=== REPOSITORY ==="
+          find . -maxdepth 3 -type d | sort
 
-          curl -L \
-            "https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.zip" \
-            -o renpy-sdk.zip
+      - name: Check Ren'Py SDK
+        run: |
+          set -e
 
-          echo "=== UNPACK RENPY ==="
+          SDK="./renpy-8.0.1-sdk"
 
-          unzip -q renpy-sdk.zip
-
-          SDK=$(find . \
-            -maxdepth 1 \
-            -type d \
-            -name "renpy-8.0.1*" \
-            | head -1)
-
-          if [ -z "$SDK" ]; then
-            echo "ERROR: Ren'Py SDK not found"
+          if [ ! -d "$SDK" ]; then
+            echo "ERROR: Ren'Py SDK not found:"
+            echo "$SDK"
             exit 1
           fi
 
-          SDK=$(cd "$SDK" && pwd)
+          echo "Ren'Py SDK found:"
+          "$SDK/renpy.py" --version || true
 
-          echo "REN'PY SDK:"
-          echo "$SDK"
-
-          echo "RENpySDK=$SDK" >> "$GITHUB_ENV"
-
-
-      # ==========================================
-      # 3. RENIOS
-      # ==========================================
-
-      - name: Download Renios 8.0.1
-        shell: bash
+      - name: Prepare game directory
         run: |
           set -e
 
-          echo "=== DOWNLOAD RENIOS ==="
+          echo "=== SEARCH x-game ==="
 
-          curl -L \
-            "https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip" \
-            -o renios.zip
+          GAME_SOURCE=$(find . -type d -name "x-game" \
+            -not -path "./renpy-8.0.1-sdk/*" | head -1 || true)
 
-          echo "=== INSTALL RENIOS ==="
-
-          unzip -o renios.zip -d "$RENpySDK"
-
-          echo "Renios installed."
-
-
-      # ==========================================
-      # 4. ПРОВЕРКА SDK
-      # ==========================================
-
-      - name: Check Ren'Py
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== RENPY SDK ==="
-
-          ls -la "$RENpySDK"
-
-          echo ""
-          echo "=== RENPY VERSION ==="
-
-          "$RENpySDK/renpy.sh" --version || true
-
-
-      # ==========================================
-      # 5. ПОИСК GAME
-      # ==========================================
-
-      - name: Locate game directory
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== SEARCHING FOR GAME ==="
-
-          GAME_DIR=$(find . \
-            -type d \
-            -name "game" \
-            -not -path "./renpy-8.0.1-sdk/*" \
-            -not -path "./build_project/*" \
-            | head -1)
-
-          if [ -z "$GAME_DIR" ]; then
-
-            echo ""
-            echo "ERROR: GAME DIRECTORY NOT FOUND"
-            echo ""
-
-            echo "Repository directories:"
-            find . \
-              -type d \
-              -not -path "./renpy-8.0.1-sdk/*" \
-              | head -200
-
+          if [ -z "$GAME_SOURCE" ]; then
+            echo "ERROR: x-game not found"
             exit 1
           fi
 
-          GAME_DIR=$(cd "$GAME_DIR" && pwd)
+          echo "Found:"
+          echo "$GAME_SOURCE"
+
+          rm -rf game
+          mkdir -p game
+
+          cp -R "$GAME_SOURCE"/. game/
 
           echo ""
-          echo "GAME FOUND:"
-          echo "$GAME_DIR"
+          echo "=== GAME DIRECTORY ==="
+          find game -maxdepth 3 -type f | sort | head -300
 
-          echo "GAME_DIR=$GAME_DIR" >> "$GITHUB_ENV"
-
-          echo ""
-          echo "=== GAME SIZE ==="
-
-          du -sh "$GAME_DIR"
-
-          echo ""
-          echo "=== GAME FILES ==="
-
-          find "$GAME_DIR" \
-            -maxdepth 2 \
-            -type f \
-            | head -100
-
-
-      # ==========================================
-      # 6. АНАЛИЗ ИГРЫ
-      # ==========================================
-
-      - name: Analyze game
-        shell: bash
+      - name: Verify game files
         run: |
           set -e
 
-          echo "========================================"
-          echo "MY BEST DEAL 4.7"
-          echo "========================================"
+          echo "=== GAME CHECK ==="
+
+          RPYC_COUNT=$(find game -type f -name "*.rpyc" | wc -l | tr -d ' ')
+
+          echo "RPYC files: $RPYC_COUNT"
+
+          if [ "$RPYC_COUNT" -eq 0 ]; then
+            echo "ERROR: No RPYC files found"
+            exit 1
+          fi
 
           echo ""
-          echo "GAME:"
-          echo "$GAME_DIR"
+          echo "Script version:"
+
+          if [ -f "game/x-script_version.txt" ]; then
+            cat game/x-script_version.txt
+          fi
 
           echo ""
-          echo "SIZE:"
-          du -sh "$GAME_DIR"
+          echo "Build info:"
 
-          echo ""
-          echo "RPYC COUNT:"
-          find "$GAME_DIR" \
-            -name "*.rpyc" \
-            | wc -l
-
-          echo ""
-          echo "RPA COUNT:"
-          find "$GAME_DIR" \
-            -name "*.rpa" \
-            | wc -l
-
-          echo ""
-          echo "SO LIBRARIES:"
-          find "$GAME_DIR" \
-            -name "*.so"
-
-          echo ""
-          echo "ANDROID FILES:"
-          find "$GAME_DIR" \
-            \( -name "AndroidManifest.xml" \
-            -o -name "classes.dex" \)
-
-
-      # ==========================================
-      # 7. СОЗДАНИЕ REN'PY ПРОЕКТА
-      # ==========================================
+          if [ -f "game/x-cache/x-build_info.json" ]; then
+            cat game/x-cache/x-build_info.json
+          fi
 
       - name: Prepare Ren'Py project
-        shell: bash
         run: |
           set -e
 
-          echo "=== PREPARING PROJECT ==="
+          cat > project.json <<'EOF'
+          {
+            "renpy_version": "8.0.1",
+            "version": "4.7",
+            "name": "My Best Deal 4.7",
+            "package": "mybestdeal47"
+          }
+          EOF
 
-          rm -rf build_project
+          echo "=== PROJECT ==="
+          cat project.json
 
-          mkdir -p build_project
-
-          cp -R "$GAME_DIR" build_project/game
-
-          echo ""
-          echo "GAME COPIED."
-
-          echo ""
-          echo "PROJECT SIZE:"
-
-          du -sh build_project
-
-          echo ""
-          echo "GAME SIZE:"
-
-          du -sh build_project/game
-
-          echo ""
-          echo "RPYC FILES:"
-
-          find build_project/game \
-            -name "*.rpyc" \
-            | wc -l
-
-          echo ""
-          echo "PROJECT STRUCTURE:"
-
-          find build_project \
-            -maxdepth 2 \
-            -type d \
-            | head -100
-
-
-      # ==========================================
-      # 8. ПРОВЕРКА ПРОЕКТА
-      # ==========================================
-
-      - name: Test Ren'Py project
-        shell: bash
+      - name: Check Ren'Py launcher
         run: |
           set -e
 
-          cd build_project
+          SDK="./renpy-8.0.1-sdk"
 
-          echo "=== TEST PROJECT ==="
-
-          "$RENpySDK/renpy.sh" \
-            "$PWD" \
-            lint \
-            || true
-
-          echo ""
-          echo "Lint finished."
-
-
-      # ==========================================
-      # 9. СОЗДАНИЕ IOS XCODE PROJECT
-      # ==========================================
-
-      - name: Create iOS Xcode Project
-        shell: bash
-        run: |
-          set -e
-
-          cd build_project
-
-          echo "========================================"
-          echo "CREATING IOS PROJECT"
-          echo "========================================"
-
-          "$RENpySDK/renpy.sh" \
-            "$PWD" \
-            ios_create
-
-          echo ""
-          echo "ios_create finished."
-
-
-      # ==========================================
-      # 10. ПОИСК XCODE PROJECT
-      # ==========================================
-
-      - name: Find Xcode project
-        shell: bash
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "SEARCHING FOR XCODE PROJECT"
-          echo "========================================"
-
-          find build_project \
-            \( -name "*.xcodeproj" \
-            -o -name "*.xcworkspace" \) \
-            -print
-
-          PROJECT=$(find build_project \
-            -name "*.xcodeproj" \
-            | head -1)
-
-          if [ -z "$PROJECT" ]; then
-
-            echo ""
-            echo "ERROR: XCODE PROJECT WAS NOT CREATED"
-            echo ""
-
-            echo "Generated project files:"
-            find build_project \
-              -maxdepth 5 \
-              -type f \
-              | head -300
-
+          if [ ! -f "$SDK/renpy.py" ]; then
+            echo "ERROR: renpy.py not found"
             exit 1
           fi
 
-          echo ""
-          echo "XCODE PROJECT FOUND:"
-          echo "$PROJECT"
+          echo "Ren'Py files:"
+          ls -la "$SDK" | head -50
 
-          echo "XCODE_PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-
-      # ==========================================
-      # 11. УПАКОВКА XCODE PROJECT
-      # ==========================================
-
-      - name: Package Xcode project
-        shell: bash
+      - name: Build iOS
         run: |
           set -e
 
-          mkdir -p output
+          SDK="./renpy-8.0.1-sdk"
 
-          PROJECT="$XCODE_PROJECT"
+          echo "=== START iOS BUILD ==="
 
-          PROJECT_DIR=$(dirname "$PROJECT")
+          python3 "$SDK/renpy.py" \
+            "$SDK" \
+            build \
+            --destination "build"
 
-          PROJECT_NAME=$(basename "$PROJECT_DIR")
+      - name: Show build result
+        if: always()
+        run: |
+          echo "=== BUILD RESULT ==="
 
-          echo "PROJECT:"
-          echo "$PROJECT"
+          if [ -d "build" ]; then
+            find build -maxdepth 4 -type f | sort
+          else
+            echo "Build directory does not exist."
+          fi
 
-          echo ""
-          echo "PROJECT DIRECTORY:"
-          echo "$PROJECT_DIR"
-
-          cd "$PROJECT_DIR/.."
-
-          zip -r \
-            "$GITHUB_WORKSPACE/output/MyBestDeal_4.7_iOS_Xcode.zip" \
-            "$PROJECT_NAME"
-
-          echo ""
-          echo "PACKAGE CREATED:"
-
-          ls -lh \
-            "$GITHUB_WORKSPACE/output/MyBestDeal_4.7_iOS_Xcode.zip"
-
-
-      # ==========================================
-      # 12. СОХРАНИТЬ РЕЗУЛЬТАТ
-      # ==========================================
-
-      - name: Upload Xcode project
+      - name: Upload iOS build
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: MyBestDeal-4.7-iOS-Xcode
-          path: output/MyBestDeal_4.7_iOS_Xcode.zip
+          name: MyBestDeal-4.7-iOS
+          path: build/
           if-no-files-found: error
+          

@@ -1,0 +1,325 @@
+name: Build iOS 14 - My Best Deal 4.7
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download RenPy 8.0.1
+        shell: bash
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP"
+
+          curl -L --fail \
+            -o renpy.tar.bz2 \
+            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
+
+          rm -rf "$RUNNER_TEMP/renpy-sdk"
+          mkdir -p "$RUNNER_TEMP/renpy-sdk"
+
+          tar -xjf renpy.tar.bz2 \
+            --strip-components=1 \
+            -C "$RUNNER_TEMP/renpy-sdk"
+
+          chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+
+      - name: Install RAPT
+        shell: bash
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP"
+
+          curl -L --fail \
+            -o rapt.zip \
+            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-rapt.zip
+
+          unzip -q -o rapt.zip \
+            -d "$RUNNER_TEMP/renpy-sdk"
+
+          test -f \
+            "$RUNNER_TEMP/renpy-sdk/rapt/buildlib/rapt/interface.py"
+
+      - name: Install Renios
+        shell: bash
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP"
+
+          curl -L --fail \
+            -o renios.zip \
+            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip
+
+          unzip -q -o renios.zip \
+            -d "$RUNNER_TEMP/renpy-sdk"
+
+          test -d "$RUNNER_TEMP/renpy-sdk/renios"
+
+      - name: Download APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+
+          rm -rf "$RUNNER_TEMP/apk"
+          mkdir -p "$RUNNER_TEMP/apk"
+
+          gh release download mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --pattern "*.apk" \
+            --dir "$RUNNER_TEMP/apk"
+
+          APK=$(find "$RUNNER_TEMP/apk" \
+            -type f \
+            -iname "*.apk" \
+            | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK not found"
+            exit 1
+          fi
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Extract APK
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf "$RUNNER_TEMP/apk-extracted"
+          mkdir -p "$RUNNER_TEMP/apk-extracted"
+
+          unzip -q -o "$APK" \
+            -d "$RUNNER_TEMP/apk-extracted"
+
+      - name: Prepare game
+        shell: bash
+        run: |
+          set -e
+
+          GAME=$(find "$RUNNER_TEMP/apk-extracted" \
+            -type d \
+            -name "x-game" \
+            | head -1)
+
+          if [ -z "$GAME" ]; then
+            echo "ERROR: x-game not found"
+            exit 1
+          fi
+
+          rm -rf "$GITHUB_WORKSPACE/game"
+          mkdir -p "$GITHUB_WORKSPACE/game"
+
+          cp -R "$GAME"/. \
+            "$GITHUB_WORKSPACE/game"/
+
+          echo "=== GAME ==="
+          find "$GITHUB_WORKSPACE/game" \
+            -maxdepth 2 \
+            -type f \
+            | head -50
+
+      # ==================================================
+      # PATCH RENPY DISTRIBUTOR
+      # ==================================================
+
+      - name: Patch RenPy Distributor
+        shell: bash
+        run: |
+          set -e
+
+          DISTRIBUTOR="$RUNNER_TEMP/renpy-sdk/game/distribute.rpy"
+
+          if [ ! -f "$DISTRIBUTOR" ]; then
+            echo "ERROR: distribute.rpy not found"
+            find "$RUNNER_TEMP/renpy-sdk" \
+              -name "distribute.rpy" \
+              -print
+            exit 1
+          fi
+
+          echo "=== PATCH DISTRIBUTE.RPY ==="
+          echo "$DISTRIBUTOR"
+
+          cp "$DISTRIBUTOR" "$DISTRIBUTOR.backup"
+
+          python3 - "$DISTRIBUTOR" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = f.read()
+
+          old = "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])"
+          new = "project.update_dump(force=False, gui=False, compile=False)"
+
+          count = data.count(old)
+
+          print("Occurrences:", count)
+
+          if count:
+              data = data.replace(old, new)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(data)
+
+          print("=== PATCH COMPLETE ===")
+          PY
+
+          grep -n "update_dump" "$DISTRIBUTOR" || true
+
+      # ==================================================
+      # PATCH IOS.RPY
+      # ==================================================
+
+      - name: Patch RenPy iOS
+        shell: bash
+        run: |
+          set -e
+
+          IOS="$RUNNER_TEMP/renpy-sdk/game/ios.rpy"
+
+          if [ ! -f "$IOS" ]; then
+            echo "ERROR: ios.rpy not found"
+
+            find "$RUNNER_TEMP/renpy-sdk" \
+              -name "ios.rpy" \
+              -print
+
+            exit 1
+          fi
+
+          echo "=== IOS.RPY ==="
+          echo "$IOS"
+
+          cp "$IOS" "$IOS.backup"
+
+          python3 - "$IOS" <<'PY'
+          import sys
+
+          path = sys.argv[1]
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = f.read()
+
+          replacements = [
+              (
+                  "p.update_dump(force=True, gui=gui)",
+                  "p.update_dump(force=False, gui=gui)"
+              ),
+              (
+                  "p.update_dump(force=True, gui=False)",
+                  "p.update_dump(force=False, gui=False)"
+              ),
+              (
+                  "project.update_dump(force=True, gui=False, compile=project.data['force_recompile'])",
+                  "project.update_dump(force=False, gui=False, compile=False)"
+              )
+          ]
+
+          for old, new in replacements:
+              count = data.count(old)
+
+              if count:
+                  print("Replacing:", old)
+                  data = data.replace(old, new)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(data)
+
+          print("=== IOS PATCH COMPLETE ===")
+          PY
+
+          grep -n "update_dump" "$IOS" || true
+
+      # ==================================================
+      # DELETE OLD COMPILED DATA
+      # ==================================================
+
+      - name: Remove invalid compiled RenPy files
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== CHECK COMPILED FILES ==="
+
+          find "$GITHUB_WORKSPACE/game" \
+            -type f \
+            -name "*.rpyc" \
+            | wc -l
+
+          echo "Keeping original RPYC files."
+
+      # ==================================================
+      # CREATE IOS
+      # ==================================================
+
+      - name: Create iOS project
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf "$RUNNER_TEMP/ios-project"
+
+          mkdir -p "$RUNNER_TEMP/ios-project"
+
+          echo "=== IOS CREATE ==="
+
+          cd "$RUNNER_TEMP/renpy-sdk"
+
+          ./renpy.sh launcher ios_create \
+            "$GITHUB_WORKSPACE" \
+            "$RUNNER_TEMP/ios-project"
+
+          echo "=== IOS CREATE FINISHED ==="
+
+      # ==================================================
+      # VERIFY
+      # ==================================================
+
+      - name: Verify Xcode project
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== SEARCH XCODE PROJECT ==="
+
+          PROJECT=$(find "$RUNNER_TEMP/ios-project" \
+            -type d \
+            -name "*.xcodeproj" \
+            | head -1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: Xcode project not found"
+
+            find "$RUNNER_TEMP/ios-project" \
+              -maxdepth 8 \
+              -print
+
+            exit 1
+          fi
+
+          echo "FOUND:"
+          echo "$PROJECT"
+
+      # ==================================================
+      # UPLOAD
+      # ==================================================
+
+      - name: Upload iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyBestDeal-4.7-iOS
+          path: ${{ runner.temp }}/ios-project
+          if-no-files-found: error

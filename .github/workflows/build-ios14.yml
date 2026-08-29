@@ -63,17 +63,10 @@ jobs:
           unzip -q -o rapt.zip \
             -d "$RUNNER_TEMP/renpy-sdk"
 
-          if [ ! -d "$RUNNER_TEMP/renpy-sdk/rapt" ]; then
-            echo "ERROR: RAPT was not installed"
-            exit 1
-          fi
+          test -d "$RUNNER_TEMP/renpy-sdk/rapt"
+          test -d "$RUNNER_TEMP/renpy-sdk/rapt/buildlib"
 
           echo "=== RAPT OK ==="
-
-          find "$RUNNER_TEMP/renpy-sdk/rapt" \
-            -maxdepth 3 \
-            -type f \
-            | head -50
 
       # ==========================================
       # RENIOS
@@ -96,20 +89,13 @@ jobs:
           unzip -q -o renios.zip \
             -d "$RUNNER_TEMP/renpy-sdk"
 
-          if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios" ]; then
-            echo "ERROR: RENIOS was not installed"
-            exit 1
-          fi
-
-          if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios/buildlib" ]; then
-            echo "ERROR: renios/buildlib not found"
-            exit 1
-          fi
+          test -d "$RUNNER_TEMP/renpy-sdk/renios"
+          test -d "$RUNNER_TEMP/renpy-sdk/renios/buildlib"
 
           echo "=== RENIOS OK ==="
 
       # ==========================================
-      # CHECK IOS TOOLS
+      # VERIFY IOS TOOLS
       # ==========================================
 
       - name: Verify iOS tools
@@ -142,7 +128,6 @@ jobs:
           set -e
 
           rm -rf "$RUNNER_TEMP/apk"
-
           mkdir -p "$RUNNER_TEMP/apk"
 
           echo "=== DOWNLOAD APK ==="
@@ -205,8 +190,6 @@ jobs:
           if [ -z "$GAME" ]; then
             echo "ERROR: x-game NOT FOUND"
 
-            echo "=== APK DIRECTORIES ==="
-
             find "$RUNNER_TEMP/apk-extracted" \
               -maxdepth 6 \
               -type d \
@@ -225,7 +208,7 @@ jobs:
           cp -R "$GAME"/. \
             "$GITHUB_WORKSPACE/game"/
 
-          echo "x-game copied to game/"
+          echo "x-game copied"
 
       # ==========================================
       # VERIFY GAME
@@ -236,11 +219,6 @@ jobs:
           set -e
 
           echo "=== VERIFY GAME ==="
-
-          if [ ! -d "$GITHUB_WORKSPACE/game" ]; then
-            echo "ERROR: game directory not found"
-            exit 1
-          fi
 
           RPYC=$(find "$GITHUB_WORKSPACE/game" \
             -type f \
@@ -277,30 +255,28 @@ jobs:
           fi
 
       # ==========================================
-      # CLEAN OLD IOS PROJECT
+      # CLEAN IOS DESTINATION
       # ==========================================
 
-      - name: Clean old iOS project
+      - name: Clean iOS destination
         run: |
           set -e
 
-          echo "=== CLEAN IOS PROJECT ==="
+          echo "=== CLEAN IOS DESTINATION ==="
+
+          # ВАЖНО:
+          # ios_create должен получить НЕСУЩЕСТВУЮЩУЮ папку.
+          # Поэтому здесь мы только удаляем её,
+          # но НЕ создаём заново.
 
           rm -rf "$RUNNER_TEMP/ios-project"
 
-          mkdir -p "$RUNNER_TEMP/ios-project"
+          if [ -e "$RUNNER_TEMP/ios-project" ]; then
+            echo "ERROR: ios-project still exists"
+            exit 1
+          fi
 
-          # Удаляем возможные старые Xcode проекты
-          find "$GITHUB_WORKSPACE" \
-            -maxdepth 4 \
-            \( \
-              -name "*.xcodeproj" \
-              -o -name "*.xcworkspace" \
-            \) \
-            -print \
-            -exec rm -rf {} \;
-
-          echo "Old iOS projects removed"
+          echo "Destination is clean"
 
       # ==========================================
       # IOS CREATE
@@ -372,7 +348,7 @@ jobs:
           echo "$XCODE_PROJECT"
 
       # ==========================================
-      # UPLOAD
+      # UPLOAD ARTIFACT
       # ==========================================
 
       - name: Upload iOS project

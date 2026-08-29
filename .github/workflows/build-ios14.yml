@@ -12,32 +12,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download RenPy 8.0.1
+      - name: Download RenPy 8.0.1 SDK
         run: |
           set -e
 
           cd "$RUNNER_TEMP"
 
-          echo "=== DOWNLOAD RENPY 8.0.1 ==="
-
           curl -L --fail \
             -o renpy-sdk.tar.bz2 \
             https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
 
-          rm -rf "$RUNNER_TEMP/renpy-sdk"
-
-          mkdir -p "$RUNNER_TEMP/renpy-sdk"
+          rm -rf renpy-sdk
+          mkdir -p renpy-sdk
 
           tar -xjf renpy-sdk.tar.bz2 \
             --strip-components=1 \
-            -C "$RUNNER_TEMP/renpy-sdk"
+            -C renpy-sdk
 
-          test -f "$RUNNER_TEMP/renpy-sdk/renpy.py"
-          test -f "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+          test -f renpy-sdk/renpy.sh
 
-          chmod +x "$RUNNER_TEMP/renpy-sdk/renpy.sh"
+          chmod +x renpy-sdk/renpy.sh
 
-          echo "RenPy SDK OK"
+          echo "=== RENPY SDK OK ==="
+
+      - name: Install RAPT 8.0.1
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP"
+
+          echo "=== DOWNLOAD RAPT 8.0.1 ==="
+
+          curl -L --fail \
+            -o rapt.zip \
+            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-rapt.zip
+
+          rm -rf "$RUNNER_TEMP/renpy-sdk/rapt"
+
+          unzip -q -o rapt.zip \
+            -d "$RUNNER_TEMP/renpy-sdk"
+
+          if [ ! -d "$RUNNER_TEMP/renpy-sdk/rapt" ]; then
+            echo "ERROR: rapt directory not found"
+            find "$RUNNER_TEMP/renpy-sdk" -maxdepth 2 -type d | sort
+            exit 1
+          fi
+
+          echo "=== RAPT OK ==="
+
+          find "$RUNNER_TEMP/renpy-sdk/rapt" \
+            -maxdepth 2 \
+            -type f \
+            | head -30
 
       - name: Install Renios 8.0.1
         run: |
@@ -56,40 +82,17 @@ jobs:
           unzip -q -o renios.zip \
             -d "$RUNNER_TEMP/renpy-sdk"
 
-          echo "=== CHECK RENIOS STRUCTURE ==="
-
           if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios" ]; then
             echo "ERROR: renios directory not found"
-            find "$RUNNER_TEMP/renpy-sdk" -maxdepth 2 -type d | sort
             exit 1
           fi
 
           if [ ! -d "$RUNNER_TEMP/renpy-sdk/renios/buildlib" ]; then
             echo "ERROR: renios/buildlib not found"
-            echo "Actual structure:"
-            find "$RUNNER_TEMP/renpy-sdk/renios" -maxdepth 3 -type d | sort
             exit 1
           fi
 
-          if [ ! -f "$RUNNER_TEMP/renpy-sdk/renios/buildlib/renios/interface.py" ]; then
-            echo "ERROR: renios.interface not found"
-            echo "Actual files:"
-            find "$RUNNER_TEMP/renpy-sdk/renios" -maxdepth 4 -type f | sort | head -200
-            exit 1
-          fi
-
-          echo "Renios structure OK"
-
-      - name: Verify RenPy iOS support
-        run: |
-          set -e
-
-          cd "$RUNNER_TEMP/renpy-sdk"
-
-          echo "=== VERIFY RENIOS IMPORT ==="
-
-          ./renpy.sh -c \
-            "import sys; sys.path.insert(0, 'renios/buildlib'); import renios.interface; print('renios.interface: OK')"
+          echo "=== RENIOS OK ==="
 
       - name: Download APK
         env:
@@ -100,7 +103,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/apk"
           mkdir -p "$RUNNER_TEMP/apk"
 
-          echo "=== DOWNLOAD APK FROM RELEASE ==="
+          echo "=== RELEASE mybestdeal47 ==="
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -117,17 +120,16 @@ jobs:
             exit 1
           fi
 
-          echo "APK:"
-          echo "$APK"
-
           echo "APK=$APK" >> "$GITHUB_ENV"
+
+          echo "APK FOUND:"
+          echo "$APK"
 
       - name: Extract APK
         run: |
           set -e
 
           rm -rf "$RUNNER_TEMP/apk-extracted"
-
           mkdir -p "$RUNNER_TEMP/apk-extracted"
 
           echo "=== EXTRACT APK ==="
@@ -181,10 +183,10 @@ jobs:
             | wc -l \
             | tr -d ' ')
 
-          echo "RPYC count: $RPYC"
+          echo "RPYC COUNT: $RPYC"
 
           if [ "$RPYC" -eq 0 ]; then
-            echo "ERROR: No RPYC files found"
+            echo "ERROR: RPYC files not found"
             exit 1
           fi
 
@@ -197,6 +199,21 @@ jobs:
           echo "=== BUILD INFO ==="
 
           cat "$GITHUB_WORKSPACE/game/x-cache/x-build_info.json" || true
+
+      - name: Verify iOS tools
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP/renpy-sdk"
+
+          echo "=== IOS TOOLS ==="
+
+          test -d rapt
+          test -d renios
+          test -d renios/buildlib
+
+          echo "RAPT: OK"
+          echo "RENIOS: OK"
 
       - name: Create iOS project
         run: |

@@ -1,504 +1,174 @@
-name: Build IPA - My Best Deal 4.7
+name: Build IPA from iOS ZIP
 
 on:
-  workflow_dispatch:
+ workflow_dispatch:
 
 jobs:
-  build-ipa:
-    runs-on: macos-14
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download RenPy 8.0.1
-        shell: bash
-        run: |
-          set -e
-
-          SDK="$RUNNER_TEMP/renpy-sdk"
-
-          rm -rf "$SDK"
-          mkdir -p "$SDK"
-
-          cd "$RUNNER_TEMP"
-
-          echo "=== DOWNLOAD RENPY 8.0.1 ==="
-
-          curl -L --fail \
-            -o renpy-sdk.tar.bz2 \
-            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-sdk.tar.bz2
-
-          tar -xjf renpy-sdk.tar.bz2 \
-            --strip-components=1 \
-            -C "$SDK"
-
-          echo "=== DOWNLOAD RAPT ==="
-
-          curl -L --fail \
-            -o rapt.zip \
-            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-rapt.zip
-
-          unzip -q -o rapt.zip \
-            -d "$SDK"
-
-          echo "=== DOWNLOAD RENIOS ==="
-
-          curl -L --fail \
-            -o renios.zip \
-            https://www.renpy.org/dl/8.0.1/renpy-8.0.1-renios.zip
-
-          unzip -q -o renios.zip \
-            -d "$SDK"
-
-          chmod +x "$SDK/renpy.sh"
-
-          echo "=== VERIFY RENPY ==="
-
-          test -f "$SDK/renpy.sh"
-          test -d "$SDK/rapt"
-          test -d "$SDK/renios"
-          test -d "$SDK/renios/buildlib"
-
-          echo "=== RENPY 8.0.1 READY ==="
-
-      - name: Download APK
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-
-          APK_DIR="$RUNNER_TEMP/apk"
-
-          rm -rf "$APK_DIR"
-          mkdir -p "$APK_DIR"
-
-          echo "=== DOWNLOAD APK ==="
-
-          gh release download mybestdeal47 \
-            --repo "${{ github.repository }}" \
-            --pattern "*.apk" \
-            --dir "$APK_DIR"
-
-          APK=$(find "$APK_DIR" \
-            -type f \
-            -iname "*.apk" \
-            -print -quit)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK NOT FOUND"
-            exit 1
-          fi
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-          echo "=== APK FOUND ==="
-          echo "$APK"
-
-      - name: Extract APK
-        shell: bash
-        run: |
-          set -e
-
-          EXTRACT="$RUNNER_TEMP/apk-extracted"
-
-          rm -rf "$EXTRACT"
-          mkdir -p "$EXTRACT"
-
-          echo "=== EXTRACT APK ==="
-
-          unzip -q -o "$APK" \
-            -d "$EXTRACT"
-
-          echo "=== APK EXTRACTED ==="
-
-      - name: Prepare RenPy game
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== FIND X-GAME ==="
-
-          GAME=$(find "$RUNNER_TEMP/apk-extracted" \
-            -type d \
-            -name "x-game" \
-            -print -quit)
-
-          if [ -z "$GAME" ]; then
-            echo "ERROR: x-game NOT FOUND"
-
-            find "$RUNNER_TEMP/apk-extracted" \
-              -maxdepth 6 \
-              -print
-
-            exit 1
-          fi
-
-          echo "GAME:"
-          echo "$GAME"
-
-          rm -rf "$GITHUB_WORKSPACE/game"
-
-          mkdir -p "$GITHUB_WORKSPACE/game"
-
-          cp -R "$GAME"/. \
-            "$GITHUB_WORKSPACE/game"/
-
-          echo "=== REMOVE STALE RPYC ==="
-
-          find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpyc" \
-            -delete
-
-          echo "=== GAME CONTENT ==="
-
-          echo "RYP:"
-          find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpy" \
-            | wc -l
-
-          echo "RPYC:"
-          find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpyc" \
-            | wc -l
-
-          echo "RPA:"
-          find "$GITHUB_WORKSPACE/game" \
-            -type f \
-            -name "*.rpa" \
-            | wc -l
-
-      - name: Prepare project configuration
-        shell: bash
-        run: |
-          set -e
-
-          PROJECT="$GITHUB_WORKSPACE"
-
-          echo "=== PREPARE PROJECT ==="
-
-          if [ ! -f "$PROJECT/game/options.rpy" ]; then
-            cat > "$PROJECT/game/options.rpy" <<'EOF'
-define config.name = "My Best Deal"
-define config.version = "4.7"
-define build.name = "MyBestDeal"
-define build.version = "4.7"
-EOF
-          fi
-
-          echo "=== PROJECT READY ==="
-
-      - name: Create iOS Xcode project
-        shell: bash
-        env:
-          SDL_VIDEODRIVER: dummy
-          SDL_AUDIODRIVER: dummy
-          RENPY_RENDERER: sw
-        run: |
-          set -e
-
-          SDK="$RUNNER_TEMP/renpy-sdk"
-          DEST="$RUNNER_TEMP/ios-project"
-
-          echo "=== IOS CREATE ==="
-
-          rm -rf "$DEST"
-          mkdir -p "$DEST"
-
-          echo "SDK:"
-          echo "$SDK"
-
-          echo "PROJECT:"
-          echo "$GITHUB_WORKSPACE"
-
-          echo "DEST:"
-          echo "$DEST"
-
-          echo "=== CHECK RENIOS ==="
-
-          test -d "$SDK/renios"
-          test -d "$SDK/renios/buildlib"
-
-          echo "RENios OK"
-
-          echo "=== RUN RENPY IOS_CREATE ==="
-
-          cd "$SDK"
-
-          PYTHONPATH="$SDK/renios/buildlib:$SDK/rapt/buildlib:$SDK" \
-          ./renpy.sh \
-            launcher \
-            ios_create \
-            "$GITHUB_WORKSPACE" \
-            "$DEST" </dev/null
-
-          echo "=== IOS CREATE FINISHED ==="
-
-      - name: Find Xcode project
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== FIND XCODE PROJECT ==="
-
-          XCODEPROJ=$(find "$RUNNER_TEMP/ios-project" \
-            -type d \
-            -name "*.xcodeproj" \
-            -print -quit)
-
-          if [ -z "$XCODEPROJ" ]; then
-            echo "ERROR: XCODE PROJECT NOT FOUND"
-
-            find "$RUNNER_TEMP/ios-project" \
-              -maxdepth 7 \
-              -print
-
-            exit 1
-          fi
-
-          echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
-
-          echo "=== XCODE PROJECT FOUND ==="
-          echo "$XCODEPROJ"
-
-      - name: Show Xcode information
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== XCODE VERSION ==="
-
-          xcodebuild -version
-
-          echo
-          echo "=== PROJECT ==="
-
-          xcodebuild \
-            -project "$XCODEPROJ" \
-            -list
-
-      - name: Find Xcode scheme
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== FIND SCHEME ==="
-
-          SCHEME=$(xcodebuild \
-            -project "$XCODEPROJ" \
-            -list 2>/dev/null |
-            awk '
-              /Schemes:/ {
-                found=1
-                next
-              }
-
-              found && NF {
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                print
-                exit
-              }
-            ')
-
-          if [ -z "$SCHEME" ]; then
-            echo "ERROR: SCHEME NOT FOUND"
-            exit 1
-          fi
-
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-
-          echo "=== SCHEME FOUND ==="
-          echo "$SCHEME"
-
-      - name: Archive iOS application
-        shell: bash
-        run: |
-          set -o pipefail
-
-          echo "=== ARCHIVE IOS APPLICATION ==="
-
-          ARCHIVE_DIR="$RUNNER_TEMP/archive"
-          ARCHIVE_PATH="$ARCHIVE_DIR/MyBestDeal.xcarchive"
-
-          rm -rf "$ARCHIVE_DIR"
-          mkdir -p "$ARCHIVE_DIR"
-
-          xcodebuild \
-            -project "$XCODEPROJ" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath "$ARCHIVE_PATH" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            archive
-
-          if [ ! -d "$ARCHIVE_PATH" ]; then
-            echo "ERROR: ARCHIVE NOT CREATED"
-            exit 1
-          fi
-
-          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
-
-          echo "=== ARCHIVE CREATED ==="
-
-      - name: Create unsigned IPA
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== CREATE UNSIGNED IPA ==="
-
-          APP=$(find "$ARCHIVE_PATH/Products/Applications" \
-            -type d \
-            -name "*.app" \
-            -print -quit)
-
-          if [ -z "$APP" ]; then
-            echo "ERROR: APP NOT FOUND"
-
-            find "$ARCHIVE_PATH" \
-              -maxdepth 7 \
-              -print
-
-            exit 1
-          fi
-
-          echo "APP:"
-          echo "$APP"
-
-          PAYLOAD="$RUNNER_TEMP/Payload"
-          IPA="$RUNNER_TEMP/MyBestDeal-4.7-unsigned.ipa"
-
-          rm -rf "$PAYLOAD"
-          rm -f "$IPA"
-
-          mkdir -p "$PAYLOAD"
-
-          cp -R "$APP" \
-            "$PAYLOAD/"
-
-          cd "$RUNNER_TEMP"
-
-          ditto -c -k \
-            --sequesterRsrc \
-            --keepParent \
-            Payload \
-            "$IPA"
-
-          test -f "$IPA"
-
-          echo "UNSIGNED_IPA=$IPA" >> "$GITHUB_ENV"
-
-          echo "=== UNSIGNED IPA CREATED ==="
-
-          ls -lh "$IPA"
-
-      - name: Attempt signed IPA export
-        shell: bash
-        run: |
-          set +e
-
-          echo "=== ATTEMPT SIGNED IPA ==="
-
-          EXPORT_DIR="$RUNNER_TEMP/export"
-
-          rm -rf "$EXPORT_DIR"
-          mkdir -p "$EXPORT_DIR"
-
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>development</string>
-
-    <key>signingStyle</key>
-    <string>automatic</string>
-
-    <key>compileBitcode</key>
-    <false/>
-
-    <key>stripSwiftSymbols</key>
-    <true/>
-</dict>
-</plist>
-PLIST
-
-          xcodebuild \
-            -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportPath "$EXPORT_DIR" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-
-          STATUS=$?
-
-          if [ "$STATUS" -eq 0 ]; then
-
-            IPA=$(find "$EXPORT_DIR" \
-              -type f \
-              -name "*.ipa" \
-              -print -quit)
-
-            if [ -n "$IPA" ]; then
-
-              cp "$IPA" \
-                "$RUNNER_TEMP/MyBestDeal-4.7.ipa"
-
-              echo "SIGNED_IPA=$RUNNER_TEMP/MyBestDeal-4.7.ipa" >> "$GITHUB_ENV"
-
-              echo "=== SIGNED IPA CREATED ==="
-
-              ls -lh "$RUNNER_TEMP/MyBestDeal-4.7.ipa"
-
-            else
-
-              echo "SIGNED IPA WAS NOT PRODUCED"
-
-            fi
-
-          else
-
-            echo "SIGNED EXPORT FAILED"
-            echo "This is normally caused by missing Apple signing/provisioning."
-
-          fi
-
-          exit 0
-
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-unsigned-IPA
-          path: ${{ runner.temp }}/MyBestDeal-4.7-unsigned.ipa
-          if-no-files-found: error
-
-      - name: Upload signed IPA
-        if: env.SIGNED_IPA != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-IPA
-          path: ${{ runner.temp }}/MyBestDeal-4.7.ipa
-          if-no-files-found: error
-
-      - name: Upload Xcode project
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-Xcode-Project
-          path: ${{ runner.temp }}/ios-project
-          if-no-files-found: ignore
-
-      - name: Upload archive
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-Xcode-Archive
-          path: ${{ runner.temp }}/archive
-          if-no-files-found: ignore
+ build-ipa:
+  runs-on: macos-14
+
+  steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+  - name: Find iOS ZIP
+    shell: bash
+    run: |
+      set -e
+      echo "=== FIND IOS ZIP ==="
+      ZIP=$(find "$GITHUB_WORKSPACE" \
+        -maxdepth 2 \
+        -type f \
+        -iname "*.zip" \
+        -print -quit)
+      if [ -z "$ZIP" ]; then
+        echo "ERROR: IOS ZIP NOT FOUND"
+        exit 1
+      fi
+      echo "IOS_ZIP=$ZIP" >> "$GITHUB_ENV"
+      echo "FOUND:"
+      echo "$ZIP"
+  - name: Extract iOS project
+    shell: bash
+    run: |
+      set -e
+      IOS_DIR="$RUNNER_TEMP/ios-project"
+      rm -rf "$IOS_DIR"
+      mkdir -p "$IOS_DIR"
+      echo "=== EXTRACT IOS ZIP ==="
+      unzip -q -o "$IOS_ZIP" \
+        -d "$IOS_DIR"
+      echo "=== EXTRACTED ==="
+      find "$IOS_DIR" \
+        -maxdepth 5 \
+        -print
+  - name: Find Xcode project
+    shell: bash
+    run: |
+      set -e
+      echo "=== FIND XCODE PROJECT ==="
+      XCODEPROJ=$(find "$RUNNER_TEMP/ios-project" \
+        -type d \
+        -name "*.xcodeproj" \
+        -print -quit)
+      if [ -z "$XCODEPROJ" ]; then
+        echo "ERROR: .xcodeproj NOT FOUND"
+        find "$RUNNER_TEMP/ios-project" \
+          -maxdepth 7 \
+          -print
+        exit 1
+      fi
+      echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
+      echo "XCODE PROJECT FOUND:"
+      echo "$XCODEPROJ"
+  - name: Show Xcode information
+    shell: bash
+    run: |
+      set -e
+      echo "=== XCODE VERSION ==="
+      xcodebuild -version
+      echo
+      echo "=== PROJECT INFORMATION ==="
+      xcodebuild \
+        -project "$XCODEPROJ" \
+        -list
+  - name: Find Xcode scheme
+    shell: bash
+    run: |
+      set -e
+      echo "=== FIND SCHEME ==="
+      PROJECT_INFO=$(xcodebuild \
+        -project "$XCODEPROJ" \
+        -list)
+      echo "$PROJECT_INFO"
+      SCHEME=$(echo "$PROJECT_INFO" |
+        awk '
+          /Schemes:/ {
+            found=1
+            next
+          }
+          found && NF {
+            gsub(/^[ \t]+|[ \t]+$/, "")
+            print
+            exit
+          }
+        ')
+      if [ -z "$SCHEME" ]; then
+        echo "ERROR: SCHEME NOT FOUND"
+        exit 1
+      fi
+      echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+      echo "=== SCHEME FOUND ==="
+      echo "$SCHEME"
+  - name: Build iOS application
+    shell: bash
+    run: |
+      set -o pipefail
+      echo "=== BUILD IOS APP ==="
+      BUILD_DIR="$RUNNER_TEMP/build"
+      rm -rf "$BUILD_DIR"
+      mkdir -p "$BUILD_DIR"
+      xcodebuild \
+        -project "$XCODEPROJ" \
+        -scheme "$SCHEME" \
+        -configuration Release \
+        -sdk iphoneos \
+        -derivedDataPath "$BUILD_DIR" \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        build
+  - name: Find built application
+    shell: bash
+    run: |
+      set -e
+      echo "=== FIND APP ==="
+      APP=$(find "$RUNNER_TEMP/build/Build/Products" \
+        -type d \
+        -name "*.app" \
+        -print -quit)
+      if [ -z "$APP" ]; then
+        echo "ERROR: APP NOT FOUND"
+        find "$RUNNER_TEMP/build" \
+          -maxdepth 8 \
+          -print
+        exit 1
+      fi
+      echo "APP=$APP" >> "$GITHUB_ENV"
+      echo "APP FOUND:"
+      echo "$APP"
+  - name: Create unsigned IPA
+    shell: bash
+    run: |
+      set -e
+      echo "=== CREATE UNSIGNED IPA ==="
+      PAYLOAD="$RUNNER_TEMP/Payload"
+      IPA="$RUNNER_TEMP/MyBestDeal-4.7-unsigned.ipa"
+      rm -rf "$PAYLOAD"
+      rm -f "$IPA"
+      mkdir -p "$PAYLOAD"
+      cp -R "$APP" \
+        "$PAYLOAD/"
+      cd "$RUNNER_TEMP"
+      ditto -c -k \
+        --sequesterRsrc \
+        --keepParent \
+        Payload \
+        "$IPA"
+      if [ ! -f "$IPA" ]; then
+        echo "ERROR: IPA NOT CREATED"
+        exit 1
+      fi
+      echo "=== IPA CREATED ==="
+      ls -lh "$IPA"
+  - name: Upload IPA
+    uses: actions/upload-artifact@v4
+    with:
+      name: MyBestDeal-4.7-unsigned-IPA
+      path: ${{ runner.temp }}/MyBestDeal-4.7-unsigned.ipa
+      if-no-files-found: error
+  - name: Upload Xcode project
+    if: always()
+    uses: actions/upload-artifact@v4
+    with:
+      name: MyBestDeal-4.7-iOS-Project
+      path: ${{ runner.temp }}/ios-project
+      if-no-files-found: ignore

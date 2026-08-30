@@ -1,239 +1,231 @@
 name: Build IPA - My Best Deal 4.7
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
-build-ipa:
-runs-on: macos-14
+  build-ipa:
+    runs-on: macos-14
 
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
-  # ============================================================
-  # FIND XCODE PROJECT
-  # ============================================================
-  - name: Find Xcode project
-    shell: bash
-    run: |
-      set -e
-      echo "=== FIND XCODE PROJECT ==="
-      XCODEPROJ=$(find "$GITHUB_WORKSPACE" \
-        -type d \
-        -name "RenPyTutorialGame.xcodeproj" \
-        -print -quit)
-      if [ -z "$XCODEPROJ" ]; then
-        echo "ERROR: RenPyTutorialGame.xcodeproj NOT FOUND"
-        echo
-        find "$GITHUB_WORKSPACE" -maxdepth 5 -print
-        exit 1
-      fi
-      echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
-      echo "FOUND:"
-      echo "$XCODEPROJ"
-  # ============================================================
-  # XCODE INFORMATION
-  # ============================================================
-  - name: Xcode information
-    shell: bash
-    run: |
-      set -e
-      echo "=== XCODE VERSION ==="
-      xcodebuild -version
-      echo
-      echo "=== PROJECT INFORMATION ==="
-      xcodebuild \
-        -project "$XCODEPROJ" \
-        -list
-  # ============================================================
-  # FIND SCHEME
-  # ============================================================
-  - name: Find scheme
-    shell: bash
-    run: |
-      set -e
-      echo "=== FIND SCHEME ==="
-      xcodebuild \
-        -project "$XCODEPROJ" \
-        -list
-      SCHEME=$(xcodebuild \
-        -project "$XCODEPROJ" \
-        -list 2>/dev/null |
-        awk '
-          /Schemes:/ {
-            active=1
-            next
-          }
-          active && NF {
-            gsub(/^[ \t]+|[ \t]+$/, "")
-            print
-            exit
-          }
-        ')
-      if [ -z "$SCHEME" ]; then
-        echo "ERROR: SCHEME NOT FOUND"
-        exit 1
-      fi
-      echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-      echo
-      echo "=== SCHEME ==="
-      echo "$SCHEME"
-  # ============================================================
-  # ARCHIVE
-  # ============================================================
-  - name: Archive application
-    shell: bash
-    run: |
-      set -o pipefail
-      echo "=== ARCHIVE ==="
-      ARCHIVE_DIR="$RUNNER_TEMP/archive"
-      ARCHIVE_PATH="$ARCHIVE_DIR/MyBestDeal.xcarchive"
-      rm -rf "$ARCHIVE_DIR"
-      mkdir -p "$ARCHIVE_DIR"
-      echo "PROJECT:"
-      echo "$XCODEPROJ"
-      echo "SCHEME:"
-      echo "$SCHEME"
-      echo "ARCHIVE:"
-      echo "$ARCHIVE_PATH"
-      xcodebuild \
-        -project "$XCODEPROJ" \
-        -scheme "$SCHEME" \
-        -configuration Release \
-        -destination "generic/platform=iOS" \
-        -archivePath "$ARCHIVE_PATH" \
-        CODE_SIGNING_ALLOWED=NO \
-        CODE_SIGNING_REQUIRED=NO \
-        archive
-      if [ ! -d "$ARCHIVE_PATH" ]; then
-        echo "ERROR: ARCHIVE NOT CREATED"
-        exit 1
-      fi
-      echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
-      echo
-      echo "=== ARCHIVE CREATED ==="
-  # ============================================================
-  # FIND APP
-  # ============================================================
-  - name: Find application
-    shell: bash
-    run: |
-      set -e
-      echo "=== FIND APP ==="
-      APP=$(find "$ARCHIVE_PATH/Products/Applications" \
-        -type d \
-        -name "*.app" \
-        -print -quit)
-      if [ -z "$APP" ]; then
-        echo "ERROR: APP NOT FOUND"
-        echo
-        find "$ARCHIVE_PATH" -maxdepth 6 -print
-        exit 1
-      fi
-      echo "APP=$APP" >> "$GITHUB_ENV"
-      echo "APP:"
-      echo "$APP"
-  # ============================================================
-  # CREATE EXPORT OPTIONS
-  # ============================================================
-  - name: Create ExportOptions.plist
-    shell: bash
-    run: |
-      set -e
-      echo "=== CREATE EXPORT OPTIONS ==="
-      cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
-      <?xml version="1.0" encoding="UTF-8"?>
-      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-      "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-      <plist version="1.0">
-      <dict>
-          <key>method</key>
-          <string>development</string>
-          <key>signingStyle</key>
-          <string>automatic</string>
-          <key>compileBitcode</key>
-          <false/>
-          <key>stripSwiftSymbols</key>
-          <true/>
-          <key>destination</key>
-          <string>export</string>
-      </dict>
-      </plist>
-      PLIST
-      echo "=== EXPORT OPTIONS ==="
-      cat "$RUNNER_TEMP/ExportOptions.plist"
-  # ============================================================
-  # EXPORT IPA
-  # ============================================================
-  - name: Export IPA
-    shell: bash
-    run: |
-      set -o pipefail
-      echo "=== EXPORT IPA ==="
-      EXPORT_DIR="$RUNNER_TEMP/export"
-      rm -rf "$EXPORT_DIR"
-      mkdir -p "$EXPORT_DIR"
-      xcodebuild \
-        -exportArchive \
-        -archivePath "$ARCHIVE_PATH" \
-        -exportPath "$EXPORT_DIR" \
-        -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
-      echo
-      echo "=== EXPORT CONTENTS ==="
-      find "$EXPORT_DIR" \
-        -maxdepth 5 \
-        -print
-      IPA=$(find "$EXPORT_DIR" \
-        -type f \
-        -name "*.ipa" \
-        -print -quit)
-      if [ -z "$IPA" ]; then
-        echo
-        echo "=========================================="
-        echo "ERROR: IPA NOT CREATED"
-        echo "=========================================="
-        echo
-        echo "The Xcode project was archived, but"
-        echo "export failed because signing/provisioning"
-        echo "is not configured."
-        echo
-        exit 1
-      fi
-      echo "IPA=$IPA" >> "$GITHUB_ENV"
-      echo
-      echo "=========================================="
-      echo "IPA CREATED SUCCESSFULLY"
-      echo "=========================================="
-      echo "$IPA"
-  # ============================================================
-  # PREPARE FINAL IPA
-  # ============================================================
-  - name: Prepare IPA
-    shell: bash
-    run: |
-      set -e
-      mkdir -p "$RUNNER_TEMP/final"
-      cp "$IPA" \
-        "$RUNNER_TEMP/final/MyBestDeal-4.7.ipa"
-      echo "=== FINAL IPA ==="
-      ls -lh \
-        "$RUNNER_TEMP/final/MyBestDeal-4.7.ipa"
-  # ============================================================
-  # UPLOAD IPA
-  # ============================================================
-  - name: Upload IPA
-    uses: actions/upload-artifact@v4
-    with:
-      name: MyBestDeal-4.7-IPA
-      path: ${{ runner.temp }}/final/MyBestDeal-4.7.ipa
-      if-no-files-found: error
-  # ============================================================
-  # UPLOAD ARCHIVE IF SOMETHING FAILS
-  # ============================================================
-  - name: Upload archive
-    if: always()
-    uses: actions/upload-artifact@v4
-    with:
-      name: MyBestDeal-4.7-XcodeArchive
-      path: ${{ runner.temp }}/archive
-      if-no-files-found: ignore
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find Xcode project
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== FIND XCODE PROJECT ==="
+
+          XCODEPROJ=$(find "$GITHUB_WORKSPACE" \
+            -type d \
+            -name "RenPyTutorialGame.xcodeproj" \
+            -print -quit)
+
+          if [ -z "$XCODEPROJ" ]; then
+            echo "ERROR: RenPyTutorialGame.xcodeproj NOT FOUND"
+            find "$GITHUB_WORKSPACE" -maxdepth 6 -print
+            exit 1
+          fi
+
+          echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
+          echo "FOUND: $XCODEPROJ"
+
+      - name: Xcode information
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== XCODE VERSION ==="
+          xcodebuild -version
+
+          echo "=== PROJECT INFORMATION ==="
+
+          xcodebuild \
+            -project "$XCODEPROJ" \
+            -list
+
+      - name: Find scheme
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== FIND SCHEME ==="
+
+          xcodebuild \
+            -project "$XCODEPROJ" \
+            -list
+
+          SCHEME=$(xcodebuild \
+            -project "$XCODEPROJ" \
+            -list 2>/dev/null |
+            awk '
+              /Schemes:/ {
+                active=1
+                next
+              }
+              active && NF {
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                print
+                exit
+              }
+            ')
+
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: SCHEME NOT FOUND"
+            exit 1
+          fi
+
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+          echo "=== SCHEME ==="
+          echo "$SCHEME"
+
+      - name: Archive application
+        shell: bash
+        run: |
+          set -o pipefail
+
+          echo "=== ARCHIVE ==="
+
+          ARCHIVE_DIR="$RUNNER_TEMP/archive"
+          ARCHIVE_PATH="$ARCHIVE_DIR/MyBestDeal.xcarchive"
+
+          rm -rf "$ARCHIVE_DIR"
+          mkdir -p "$ARCHIVE_DIR"
+
+          xcodebuild \
+            -project "$XCODEPROJ" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+
+          if [ ! -d "$ARCHIVE_PATH" ]; then
+            echo "ERROR: ARCHIVE NOT CREATED"
+            exit 1
+          fi
+
+          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
+
+          echo "=== ARCHIVE CREATED ==="
+
+      - name: Find application
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== FIND APP ==="
+
+          APP=$(find "$ARCHIVE_PATH/Products/Applications" \
+            -type d \
+            -name "*.app" \
+            -print -quit)
+
+          if [ -z "$APP" ]; then
+            echo "ERROR: APP NOT FOUND"
+            find "$ARCHIVE_PATH" -maxdepth 6 -print
+            exit 1
+          fi
+
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+          echo "APP:"
+          echo "$APP"
+
+      - name: Create ExportOptions.plist
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== CREATE EXPORT OPTIONS ==="
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>compileBitcode</key>
+              <false/>
+              <key>stripSwiftSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          cat "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Export IPA
+        shell: bash
+        run: |
+          set -o pipefail
+
+          echo "=== EXPORT IPA ==="
+
+          EXPORT_DIR="$RUNNER_TEMP/export"
+
+          rm -rf "$EXPORT_DIR"
+          mkdir -p "$EXPORT_DIR"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_DIR" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+          echo "=== EXPORT CONTENTS ==="
+
+          find "$EXPORT_DIR" -maxdepth 5 -print
+
+          IPA=$(find "$EXPORT_DIR" \
+            -type f \
+            -name "*.ipa" \
+            -print -quit)
+
+          if [ -z "$IPA" ]; then
+            echo "ERROR: IPA NOT CREATED"
+            echo "Signing/provisioning is probably required."
+            exit 1
+          fi
+
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+
+          echo "=== IPA CREATED ==="
+          echo "$IPA"
+
+      - name: Prepare IPA
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p "$RUNNER_TEMP/final"
+
+          cp "$IPA" \
+            "$RUNNER_TEMP/final/MyBestDeal-4.7.ipa"
+
+          ls -lh \
+            "$RUNNER_TEMP/final/MyBestDeal-4.7.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyBestDeal-4.7-IPA
+          path: ${{ runner.temp }}/final/MyBestDeal-4.7.ipa
+          if-no-files-found: error
+
+      - name: Upload archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyBestDeal-4.7-XcodeArchive
+          path: ${{ runner.temp }}/archive
+          if-no-files-found: ignore

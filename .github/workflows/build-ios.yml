@@ -23,15 +23,13 @@ jobs:
           rm -rf "$DOWNLOAD_DIR"
           mkdir -p "$DOWNLOAD_DIR"
 
-          echo "=== RELEASE ASSETS ==="
+          echo "=== RELEASE ZIP FILES ==="
 
           gh release view mybestdeal47 \
             --repo "${{ github.repository }}" \
             --json assets \
-            --jq '.assets[].name'
-
-          echo
-          echo "=== FIND ZIP ==="
+            --jq '.assets[].name' |
+            grep -i '\.zip$' || true
 
           ZIP_NAME=$(gh release view mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -45,11 +43,8 @@ jobs:
             exit 1
           fi
 
-          echo "ZIP FOUND:"
+          echo "ZIP:"
           echo "$ZIP_NAME"
-
-          echo
-          echo "=== DOWNLOAD ==="
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
@@ -68,7 +63,6 @@ jobs:
 
           echo "IOS_ZIP=$ZIP" >> "$GITHUB_ENV"
 
-          echo
           echo "=== ZIP DOWNLOADED ==="
           ls -lh "$ZIP"
 
@@ -87,31 +81,50 @@ jobs:
           unzip -q -o "$IOS_ZIP" \
             -d "$IOS_DIR"
 
-          echo
-          echo "=== EXTRACTED ==="
-
-          find "$IOS_DIR" \
-            -maxdepth 8 \
-            -print
+          echo "=== ZIP EXTRACTED ==="
 
       - name: Find Xcode project
         shell: bash
         run: |
           set -e
 
-          echo "=== FIND XCODE PROJECT ==="
+          echo "=== SEARCH XCODE PROJECT ==="
 
           XCODEPROJ=$(find "$RUNNER_TEMP/ios-project" \
             -type d \
             -name "*.xcodeproj" \
-            -print -quit)
+            -print \
+            | head -1)
 
           if [ -z "$XCODEPROJ" ]; then
-            echo "ERROR: XCODE PROJECT NOT FOUND"
+            echo "ERROR: NO XCODE PROJECT FOUND"
+
+            echo
+            echo "PROJECT.PBXPROJ FILES:"
 
             find "$RUNNER_TEMP/ios-project" \
-              -maxdepth 10 \
-              -print
+              -type f \
+              -name "project.pbxproj" \
+              -print \
+              | head -20
+
+            echo
+            echo "XCODE WORKSPACES:"
+
+            find "$RUNNER_TEMP/ios-project" \
+              -type d \
+              -name "*.xcworkspace" \
+              -print \
+              | head -20
+
+            echo
+            echo "DIRECTORIES NEAR ROOT:"
+
+            find "$RUNNER_TEMP/ios-project" \
+              -maxdepth 3 \
+              -type d \
+              -print \
+              | head -100
 
             exit 1
           fi
@@ -166,7 +179,7 @@ jobs:
             ')
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: SCHEME NOT FOUND"
+            echo "ERROR: NO SCHEME FOUND"
             exit 1
           fi
 
@@ -206,18 +219,19 @@ jobs:
         run: |
           set -e
 
-          echo "=== FIND APP ==="
+          echo "=== FIND BUILT APP ==="
 
-          APP=$(find "$RUNNER_TEMP/build/Build/Products" \
+          APP=$(find "$RUNNER_TEMP/build" \
             -type d \
             -name "*.app" \
-            -print -quit)
+            -print \
+            | head -1)
 
           if [ -z "$APP" ]; then
             echo "ERROR: APP NOT FOUND"
 
             find "$RUNNER_TEMP/build" \
-              -maxdepth 10 \
+              -maxdepth 8 \
               -print
 
             exit 1
@@ -229,7 +243,7 @@ jobs:
           echo "=== APP FOUND ==="
           echo "$APP"
 
-      - name: Create unsigned IPA
+      - name: Create IPA
         shell: bash
         run: |
           set -e
@@ -237,7 +251,7 @@ jobs:
           echo "=== CREATE IPA ==="
 
           PAYLOAD="$RUNNER_TEMP/Payload"
-          IPA="$RUNNER_TEMP/MyBestDeal-4.7.ipa"
+          IPA="$RUNNER_TEMP/MyBestDeal-4.7-unsigned.ipa"
 
           rm -rf "$PAYLOAD"
           rm -f "$IPA"
@@ -268,7 +282,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-IPA
-          path: ${{ runner.temp }}/MyBestDeal-4.7.ipa
+          path: ${{ runner.temp }}/MyBestDeal-4.7-unsigned.ipa
           if-no-files-found: error
 
       - name: Upload Xcode project
@@ -279,7 +293,7 @@ jobs:
           path: ${{ runner.temp }}/ios-project
           if-no-files-found: ignore
 
-      - name: Upload build files
+      - name: Upload build
         if: always()
         uses: actions/upload-artifact@v4
         with:

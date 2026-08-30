@@ -16,35 +16,69 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/zip"
 
+          echo "=== RELEASE ASSETS ==="
+          gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name'
+
+          ZIP=$(gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name' |
+            grep -i '\.zip$' |
+            head -1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: NO ZIP IN RELEASE"
+            exit 1
+          fi
+
+          echo "=== ZIP FOUND ==="
+          echo "$ZIP"
+
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
-            --pattern "MyBestDeal-4.7-IOS.3.zip" \
+            --pattern "$ZIP" \
             --dir "$RUNNER_TEMP/zip"
 
-      - name: Extract ZIP
+          echo "=== DOWNLOADED ==="
+          ls -lh "$RUNNER_TEMP/zip"
+
+      - name: Extract
         run: |
           set -e
 
-          mkdir -p "$RUNNER_TEMP/ios-project"
+          mkdir -p "$RUNNER_TEMP/extracted"
 
-          unzip -q -o \
-            "$RUNNER_TEMP/zip/MyBestDeal-4.7-IOS.3.zip" \
-            -d "$RUNNER_TEMP/ios-project"
+          ZIP=$(find "$RUNNER_TEMP/zip" \
+            -type f \
+            -iname "*.zip" \
+            -print -quit)
 
-          echo "=== IOS PROJECT ==="
-          find "$RUNNER_TEMP/ios-project" -maxdepth 3 -print
+          unzip -q -o "$ZIP" \
+            -d "$RUNNER_TEMP/extracted"
+
+          echo "=== EXTRACTED ==="
+          find "$RUNNER_TEMP/extracted" -maxdepth 3 -print
 
       - name: Build IPA
         run: |
           set -e
 
-          PROJECT="$RUNNER_TEMP/ios-project/ios-project/RenPyTutorialGame.xcodeproj"
-          BUILD="$RUNNER_TEMP/build"
+          PROJECT=$(find "$RUNNER_TEMP/extracted" \
+            -type d \
+            -name "RenPyTutorialGame.xcodeproj" \
+            -print -quit)
 
-          if [ ! -d "$PROJECT" ]; then
+          if [ -z "$PROJECT" ]; then
             echo "ERROR: RenPyTutorialGame.xcodeproj NOT FOUND"
+            find "$RUNNER_TEMP/extracted" -maxdepth 5 -print
             exit 1
           fi
+
+          echo "=== XCODE PROJECT ==="
+          echo "$PROJECT"
 
           SCHEME=$(xcodebuild \
             -project "$PROJECT" \
@@ -66,20 +100,20 @@ jobs:
             exit 1
           fi
 
-          echo "PROJECT: $PROJECT"
-          echo "SCHEME: $SCHEME"
+          echo "=== SCHEME ==="
+          echo "$SCHEME"
 
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$BUILD" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
 
-          APP=$(find "$BUILD/Build/Products" \
+          APP=$(find "$RUNNER_TEMP/build/Build/Products" \
             -type d \
             -name "*.app" \
             -print -quit)

@@ -14,141 +14,72 @@ jobs:
         run: |
           set -e
 
-          mkdir -p "$RUNNER_TEMP/ios"
-
-          echo "=== RELEASE FILES ==="
-
-          gh release view mybestdeal47 \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[].name'
-
-          echo
-          echo "=== FIND ZIP ==="
-
-          ZIP=$(gh release view mybestdeal47 \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[].name' |
-            grep -i '\.zip$' |
-            head -1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: NO ZIP FOUND IN RELEASE"
-            exit 1
-          fi
-
-          echo "ZIP FOUND: $ZIP"
+          mkdir -p "$RUNNER_TEMP/zip"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
-            --pattern "$ZIP" \
-            --dir "$RUNNER_TEMP/ios"
-
-          FILE=$(find "$RUNNER_TEMP/ios" \
-            -type f \
-            -name "*.zip" \
-            -print -quit)
-
-          if [ -z "$FILE" ]; then
-            echo "ERROR: ZIP DOWNLOAD FAILED"
-            exit 1
-          fi
-
-          echo "IOS_ZIP=$FILE" >> "$GITHUB_ENV"
+            --pattern "MyBestDeal-4.7-IOS.3.zip" \
+            --dir "$RUNNER_TEMP/zip"
 
       - name: Extract ZIP
         run: |
           set -e
 
-          mkdir -p "$RUNNER_TEMP/project"
+          mkdir -p "$RUNNER_TEMP/ios-project"
 
           unzip -q -o \
-            "$IOS_ZIP" \
-            -d "$RUNNER_TEMP/project"
+            "$RUNNER_TEMP/zip/MyBestDeal-4.7-IOS.3.zip" \
+            -d "$RUNNER_TEMP/ios-project"
 
-          echo "=== ZIP CONTENT ==="
+          echo "=== IOS PROJECT ==="
+          find "$RUNNER_TEMP/ios-project" -maxdepth 3 -print
 
-          find "$RUNNER_TEMP/project" \
-            -maxdepth 4 \
-            -print
-
-      - name: Find Xcode project
+      - name: Build IPA
         run: |
           set -e
 
-          PROJECT=$(find "$RUNNER_TEMP/project" \
-            -type d \
-            -name "*.xcodeproj" \
-            -print -quit)
+          PROJECT="$RUNNER_TEMP/ios-project/ios-project/RenPyTutorialGame.xcodeproj"
+          BUILD="$RUNNER_TEMP/build"
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: XCODE PROJECT NOT FOUND"
-            echo
-            echo "Searching project.pbxproj..."
-
-            find "$RUNNER_TEMP/project" \
-              -name "project.pbxproj" \
-              -print
-
+          if [ ! -d "$PROJECT" ]; then
+            echo "ERROR: RenPyTutorialGame.xcodeproj NOT FOUND"
             exit 1
           fi
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-          echo "XCODE PROJECT:"
-          echo "$PROJECT"
-
-      - name: Find scheme
-        run: |
-          set -e
-
-          INFO=$(xcodebuild \
+          SCHEME=$(xcodebuild \
             -project "$PROJECT" \
-            -list)
-
-          echo "$INFO"
-
-          SCHEME=$(echo "$INFO" | awk '
-            /Schemes:/ {
-              found=1
-              next
-            }
-            found && NF {
-              gsub(/^[ \t]+|[ \t]+$/, "")
-              print
-              exit
-            }
-          ')
+            -list 2>/dev/null |
+            awk '
+              /Schemes:/ {
+                found=1
+                next
+              }
+              found && NF {
+                gsub(/^[ \t]+|[ \t]+$/, "")
+                print
+                exit
+              }
+            ')
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: SCHEME NOT FOUND"
             exit 1
           fi
 
-          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-
+          echo "PROJECT: $PROJECT"
           echo "SCHEME: $SCHEME"
-
-      - name: Build
-        run: |
-          set -e
 
           xcodebuild \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$RUNNER_TEMP/build" \
+            -derivedDataPath "$BUILD" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
 
-      - name: Create IPA
-        run: |
-          set -e
-
-          APP=$(find "$RUNNER_TEMP/build/Build/Products" \
+          APP=$(find "$BUILD/Build/Products" \
             -type d \
             -name "*.app" \
             -print -quit)
@@ -158,12 +89,8 @@ jobs:
             exit 1
           fi
 
-          rm -rf "$RUNNER_TEMP/Payload"
-
-          mkdir "$RUNNER_TEMP/Payload"
-
-          cp -R "$APP" \
-            "$RUNNER_TEMP/Payload/"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
 
@@ -174,7 +101,6 @@ jobs:
             MyBestDeal-4.7.ipa
 
           echo "=== IPA CREATED ==="
-
           ls -lh MyBestDeal-4.7.ipa
 
       - name: Upload IPA

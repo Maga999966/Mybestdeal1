@@ -18,59 +18,80 @@ jobs:
         run: |
           set -e
 
-          IOS_DIR="$RUNNER_TEMP/ios-download"
+          DOWNLOAD_DIR="$RUNNER_TEMP/ios-download"
 
-          rm -rf "$IOS_DIR"
-          mkdir -p "$IOS_DIR"
+          rm -rf "$DOWNLOAD_DIR"
+          mkdir -p "$DOWNLOAD_DIR"
 
-          echo "=== DOWNLOAD IOS ZIP ==="
+          echo "=== RELEASE ASSETS ==="
+
+          gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name'
+
+          echo
+          echo "=== FIND ZIP ==="
+
+          ZIP_NAME=$(gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name' |
+            grep -i '\.zip$' |
+            head -1)
+
+          if [ -z "$ZIP_NAME" ]; then
+            echo "ERROR: NO ZIP FOUND IN RELEASE"
+            exit 1
+          fi
+
+          echo "ZIP FOUND:"
+          echo "$ZIP_NAME"
+
+          echo
+          echo "=== DOWNLOAD ==="
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
-            --pattern "MyBestDeal-4.7-IOS.3.zip" \
-            --dir "$IOS_DIR"
+            --pattern "$ZIP_NAME" \
+            --dir "$DOWNLOAD_DIR"
 
-          ZIP=$(find "$IOS_DIR" \
+          ZIP=$(find "$DOWNLOAD_DIR" \
             -type f \
-            -name "MyBestDeal-4.7-IOS.3.zip" \
+            -iname "*.zip" \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: IOS ZIP NOT FOUND IN RELEASE"
-            echo
-            echo "RELEASE FILES:"
-            gh release view mybestdeal47 \
-              --repo "${{ github.repository }}" \
-              --json assets \
-              --jq '.assets[].name'
+            echo "ERROR: ZIP DOWNLOAD FAILED"
             exit 1
           fi
 
           echo "IOS_ZIP=$ZIP" >> "$GITHUB_ENV"
 
-          echo "=== IOS ZIP DOWNLOADED ==="
+          echo
+          echo "=== ZIP DOWNLOADED ==="
           ls -lh "$ZIP"
 
-      - name: Extract iOS project
+      - name: Extract iOS ZIP
         shell: bash
         run: |
           set -e
 
-          IOS_PROJECT="$RUNNER_TEMP/ios-project"
+          IOS_DIR="$RUNNER_TEMP/ios-project"
 
-          rm -rf "$IOS_PROJECT"
-          mkdir -p "$IOS_PROJECT"
+          rm -rf "$IOS_DIR"
+          mkdir -p "$IOS_DIR"
 
           echo "=== EXTRACT IOS ZIP ==="
 
           unzip -q -o "$IOS_ZIP" \
-            -d "$IOS_PROJECT"
+            -d "$IOS_DIR"
 
           echo
           echo "=== EXTRACTED ==="
 
-          find "$IOS_PROJECT" \
-            -maxdepth 7 \
+          find "$IOS_DIR" \
+            -maxdepth 8 \
             -print
 
       - name: Find Xcode project
@@ -117,7 +138,7 @@ jobs:
             -project "$XCODEPROJ" \
             -list
 
-      - name: Find scheme
+      - name: Find Xcode scheme
         shell: bash
         run: |
           set -e
@@ -216,15 +237,14 @@ jobs:
           echo "=== CREATE IPA ==="
 
           PAYLOAD="$RUNNER_TEMP/Payload"
-          IPA="$RUNNER_TEMP/MyBestDeal-4.7-unsigned.ipa"
+          IPA="$RUNNER_TEMP/MyBestDeal-4.7.ipa"
 
           rm -rf "$PAYLOAD"
           rm -f "$IPA"
 
           mkdir -p "$PAYLOAD"
 
-          cp -R "$APP" \
-            "$PAYLOAD/"
+          cp -R "$APP" "$PAYLOAD/"
 
           cd "$RUNNER_TEMP"
 
@@ -248,7 +268,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-IPA
-          path: ${{ runner.temp }}/MyBestDeal-4.7-unsigned.ipa
+          path: ${{ runner.temp }}/MyBestDeal-4.7.ipa
           if-no-files-found: error
 
       - name: Upload Xcode project

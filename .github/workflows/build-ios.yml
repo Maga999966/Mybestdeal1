@@ -16,44 +16,104 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/ios"
 
+          echo "=== RELEASE FILES ==="
+
+          gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name'
+
+          echo
+          echo "=== FIND ZIP ==="
+
+          ZIP=$(gh release view mybestdeal47 \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[].name' |
+            grep -i '\.zip$' |
+            head -1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: NO ZIP FOUND IN RELEASE"
+            exit 1
+          fi
+
+          echo "ZIP FOUND: $ZIP"
+
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
-            --pattern "MyBestDeal-4.7-IOS.3.zip" \
+            --pattern "$ZIP" \
             --dir "$RUNNER_TEMP/ios"
 
+          FILE=$(find "$RUNNER_TEMP/ios" \
+            -type f \
+            -name "*.zip" \
+            -print -quit)
+
+          if [ -z "$FILE" ]; then
+            echo "ERROR: ZIP DOWNLOAD FAILED"
+            exit 1
+          fi
+
+          echo "IOS_ZIP=$FILE" >> "$GITHUB_ENV"
+
+      - name: Extract ZIP
+        run: |
+          set -e
+
+          mkdir -p "$RUNNER_TEMP/project"
+
           unzip -q -o \
-            "$RUNNER_TEMP/ios/MyBestDeal-4.7-IOS.3.zip" \
-            -d "$RUNNER_TEMP/ios/project"
+            "$IOS_ZIP" \
+            -d "$RUNNER_TEMP/project"
+
+          echo "=== ZIP CONTENT ==="
+
+          find "$RUNNER_TEMP/project" \
+            -maxdepth 4 \
+            -print
 
       - name: Find Xcode project
         run: |
           set -e
 
-          PROJECT=$(find "$RUNNER_TEMP/ios/project" \
+          PROJECT=$(find "$RUNNER_TEMP/project" \
             -type d \
             -name "*.xcodeproj" \
             -print -quit)
 
           if [ -z "$PROJECT" ]; then
             echo "ERROR: XCODE PROJECT NOT FOUND"
-            echo "ZIP CONTENT:"
-            find "$RUNNER_TEMP/ios/project" -maxdepth 4 -print
+            echo
+            echo "Searching project.pbxproj..."
+
+            find "$RUNNER_TEMP/project" \
+              -name "project.pbxproj" \
+              -print
+
             exit 1
           fi
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "XCODE PROJECT: $PROJECT"
+
+          echo "XCODE PROJECT:"
+          echo "$PROJECT"
 
       - name: Find scheme
         run: |
           set -e
 
-          INFO=$(xcodebuild -project "$PROJECT" -list)
+          INFO=$(xcodebuild \
+            -project "$PROJECT" \
+            -list)
 
           echo "$INFO"
 
           SCHEME=$(echo "$INFO" | awk '
-            /Schemes:/ { found=1; next }
+            /Schemes:/ {
+              found=1
+              next
+            }
             found && NF {
               gsub(/^[ \t]+|[ \t]+$/, "")
               print
@@ -67,6 +127,7 @@ jobs:
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
           echo "SCHEME: $SCHEME"
 
       - name: Build
@@ -97,9 +158,12 @@ jobs:
             exit 1
           fi
 
-          mkdir -p "$RUNNER_TEMP/Payload"
+          rm -rf "$RUNNER_TEMP/Payload"
 
-          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          mkdir "$RUNNER_TEMP/Payload"
+
+          cp -R "$APP" \
+            "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
 
@@ -109,8 +173,13 @@ jobs:
             Payload \
             MyBestDeal-4.7.ipa
 
+          echo "=== IPA CREATED ==="
+
+          ls -lh MyBestDeal-4.7.ipa
+
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-IPA
           path: ${{ runner.temp }}/MyBestDeal-4.7.ipa
+          if-no-files-found: error

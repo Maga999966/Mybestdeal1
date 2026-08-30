@@ -1,178 +1,59 @@
-name: Build IPA - My Best Deal 4.7
+name: Build IPA
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-ipa:
+  build:
     runs-on: macos-14
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download iOS ZIP from Release
-        shell: bash
+      - name: Download iOS ZIP
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
 
-          DOWNLOAD_DIR="$RUNNER_TEMP/ios-download"
-          mkdir -p "$DOWNLOAD_DIR"
-
-          echo "=== FIND IOS ZIP IN RELEASE ==="
-
-          gh release view mybestdeal47 \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[].name'
-
-          ZIP_NAME=$(gh release view mybestdeal47 \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[].name' \
-            | grep -Ei '\.zip$' \
-            | head -1)
-
-          if [ -z "$ZIP_NAME" ]; then
-            echo "ERROR: NO ZIP FILE FOUND IN RELEASE"
-            exit 1
-          fi
-
-          echo "ZIP FOUND: $ZIP_NAME"
+          mkdir -p "$RUNNER_TEMP/ios"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
-            --pattern "$ZIP_NAME" \
-            --dir "$DOWNLOAD_DIR"
+            --pattern "MyBestDeal-4.7-IOS.3.zip" \
+            --dir "$RUNNER_TEMP/ios"
 
-          ZIP_FILE=$(find "$DOWNLOAD_DIR" \
-            -type f \
-            -iname "*.zip" \
-            -print -quit)
+          unzip -q -o \
+            "$RUNNER_TEMP/ios/MyBestDeal-4.7-IOS.3.zip" \
+            -d "$RUNNER_TEMP/ios/project"
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP DOWNLOAD FAILED"
-            exit 1
-          fi
-
-          echo "IOS_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
-
-          echo "=== ZIP DOWNLOADED ==="
-          ls -lh "$ZIP_FILE"
-
-      - name: Extract iOS ZIP
-        shell: bash
+      - name: Find Xcode project
         run: |
           set -e
 
-          EXTRACT_DIR="$RUNNER_TEMP/ios-extracted"
-
-          rm -rf "$EXTRACT_DIR"
-          mkdir -p "$EXTRACT_DIR"
-
-          echo "=== EXTRACT ZIP ==="
-
-          unzip -q -o "$IOS_ZIP" -d "$EXTRACT_DIR"
-
-          echo "=== ZIP CONTENT ==="
-
-          find "$EXTRACT_DIR" \
-            -maxdepth 5 \
-            -print
-
-      - name: Check ZIP for Xcode project
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== SEARCH XCODE PROJECT ==="
-
-          XCODEPROJ=$(find "$RUNNER_TEMP/ios-extracted" \
+          PROJECT=$(find "$RUNNER_TEMP/ios/project" \
             -type d \
             -name "*.xcodeproj" \
             -print -quit)
 
-          if [ -z "$XCODEPROJ" ]; then
-            echo "NO XCODE PROJECT FOUND"
-            echo
-            echo "Searching for project.pbxproj..."
-
-            PBXPROJ=$(find "$RUNNER_TEMP/ios-extracted" \
-              -type f \
-              -name "project.pbxproj" \
-              -print -quit)
-
-            if [ -n "$PBXPROJ" ]; then
-              echo "project.pbxproj FOUND:"
-              echo "$PBXPROJ"
-            else
-              echo "project.pbxproj NOT FOUND"
-            fi
-
-            echo
-            echo "Searching for Xcode workspaces..."
-
-            find "$RUNNER_TEMP/ios-extracted" \
-              -type d \
-              -name "*.xcworkspace" \
-              -print
-
-            echo
-            echo "TOP LEVEL CONTENT:"
-            find "$RUNNER_TEMP/ios-extracted" \
-              -maxdepth 3 \
-              -print
-
-            echo
-            echo "ERROR: XCODE PROJECT NOT FOUND IN ZIP"
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: XCODE PROJECT NOT FOUND"
+            echo "ZIP CONTENT:"
+            find "$RUNNER_TEMP/ios/project" -maxdepth 4 -print
             exit 1
           fi
 
-          echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "XCODE PROJECT: $PROJECT"
 
-          echo "=== XCODE PROJECT FOUND ==="
-          echo "$XCODEPROJ"
-
-      - name: Show Xcode information
-        shell: bash
+      - name: Find scheme
         run: |
           set -e
 
-          echo "=== XCODE VERSION ==="
-          xcodebuild -version
+          INFO=$(xcodebuild -project "$PROJECT" -list)
 
-          echo
-          echo "=== XCODE PROJECT ==="
-          echo "$XCODEPROJ"
+          echo "$INFO"
 
-          echo
-          echo "=== PROJECT INFORMATION ==="
-
-          xcodebuild \
-            -project "$XCODEPROJ" \
-            -list
-
-      - name: Find Xcode scheme
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== FIND SCHEME ==="
-
-          PROJECT_INFO=$(xcodebuild \
-            -project "$XCODEPROJ" \
-            -list)
-
-          echo "$PROJECT_INFO"
-
-          SCHEME=$(echo "$PROJECT_INFO" | awk '
-            /Schemes:/ {
-              found=1
-              next
-            }
-
+          SCHEME=$(echo "$INFO" | awk '
+            /Schemes:/ { found=1; next }
             found && NF {
               gsub(/^[ \t]+|[ \t]+$/, "")
               print
@@ -181,87 +62,44 @@ jobs:
           ')
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: XCODE SCHEME NOT FOUND"
+            echo "ERROR: SCHEME NOT FOUND"
             exit 1
           fi
 
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "SCHEME: $SCHEME"
 
-          echo
-          echo "=== SCHEME FOUND ==="
-          echo "$SCHEME"
-
-      - name: Build iOS application
-        shell: bash
+      - name: Build
         run: |
-          set -o pipefail
-
-          echo "=== BUILD IOS APPLICATION ==="
-
-          BUILD_DIR="$RUNNER_TEMP/build"
-
-          rm -rf "$BUILD_DIR"
-          mkdir -p "$BUILD_DIR"
+          set -e
 
           xcodebuild \
-            -project "$XCODEPROJ" \
+            -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$BUILD_DIR" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
 
-          echo
-          echo "=== BUILD FINISHED ==="
-
-      - name: Find built application
-        shell: bash
+      - name: Create IPA
         run: |
           set -e
 
-          echo "=== FIND APP ==="
-
-          APP=$(find "$RUNNER_TEMP/build" \
+          APP=$(find "$RUNNER_TEMP/build/Build/Products" \
             -type d \
             -name "*.app" \
             -print -quit)
 
           if [ -z "$APP" ]; then
             echo "ERROR: APP NOT FOUND"
-
-            echo
-            echo "BUILD DIRECTORY:"
-
-            find "$RUNNER_TEMP/build" \
-              -maxdepth 8 \
-              -print
-
             exit 1
           fi
 
-          echo "APP=$APP" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/Payload"
 
-          echo "=== APP FOUND ==="
-          echo "$APP"
-
-      - name: Create unsigned IPA
-        shell: bash
-        run: |
-          set -e
-
-          echo "=== CREATE IPA ==="
-
-          PAYLOAD="$RUNNER_TEMP/Payload"
-          IPA="$RUNNER_TEMP/MyBestDeal-4.7-unsigned.ipa"
-
-          rm -rf "$PAYLOAD"
-          rm -f "$IPA"
-
-          mkdir -p "$PAYLOAD"
-
-          cp -R "$APP" "$PAYLOAD/"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
 
           cd "$RUNNER_TEMP"
 
@@ -269,37 +107,10 @@ jobs:
             --sequesterRsrc \
             --keepParent \
             Payload \
-            "$IPA"
-
-          if [ ! -f "$IPA" ]; then
-            echo "ERROR: IPA NOT CREATED"
-            exit 1
-          fi
-
-          echo
-          echo "=== IPA CREATED ==="
-
-          ls -lh "$IPA"
+            MyBestDeal-4.7.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-IPA
-          path: ${{ runner.temp }}/MyBestDeal-4.7-unsigned.ipa
-          if-no-files-found: error
-
-      - name: Upload Xcode project
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-Xcode-Project
-          path: ${{ runner.temp }}/ios-extracted
-          if-no-files-found: ignore
-
-      - name: Upload build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MyBestDeal-4.7-Build
-          path: ${{ runner.temp }}/build
-          if-no-files-found: ignore
+          path: ${{ runner.temp }}/MyBestDeal-4.7.ipa

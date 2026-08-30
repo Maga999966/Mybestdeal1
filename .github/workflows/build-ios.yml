@@ -1,4 +1,4 @@
-name: Build IPA from Release
+name: Build IPA - My Best Deal 4.7
 
 on:
   workflow_dispatch:
@@ -19,119 +19,119 @@ jobs:
           set -e
 
           DOWNLOAD_DIR="$RUNNER_TEMP/ios-download"
-
-          rm -rf "$DOWNLOAD_DIR"
           mkdir -p "$DOWNLOAD_DIR"
 
-          echo "=== RELEASE ZIP FILES ==="
+          echo "=== FIND IOS ZIP IN RELEASE ==="
 
           gh release view mybestdeal47 \
             --repo "${{ github.repository }}" \
             --json assets \
-            --jq '.assets[].name' |
-            grep -i '\.zip$' || true
+            --jq '.assets[].name'
 
           ZIP_NAME=$(gh release view mybestdeal47 \
             --repo "${{ github.repository }}" \
             --json assets \
-            --jq '.assets[].name' |
-            grep -i '\.zip$' |
-            head -1)
+            --jq '.assets[].name' \
+            | grep -Ei '\.zip$' \
+            | head -1)
 
           if [ -z "$ZIP_NAME" ]; then
-            echo "ERROR: NO ZIP FOUND IN RELEASE"
+            echo "ERROR: NO ZIP FILE FOUND IN RELEASE"
             exit 1
           fi
 
-          echo "ZIP:"
-          echo "$ZIP_NAME"
+          echo "ZIP FOUND: $ZIP_NAME"
 
           gh release download mybestdeal47 \
             --repo "${{ github.repository }}" \
             --pattern "$ZIP_NAME" \
             --dir "$DOWNLOAD_DIR"
 
-          ZIP=$(find "$DOWNLOAD_DIR" \
+          ZIP_FILE=$(find "$DOWNLOAD_DIR" \
             -type f \
             -iname "*.zip" \
             -print -quit)
 
-          if [ -z "$ZIP" ]; then
+          if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: ZIP DOWNLOAD FAILED"
             exit 1
           fi
 
-          echo "IOS_ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "IOS_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
 
           echo "=== ZIP DOWNLOADED ==="
-          ls -lh "$ZIP"
+          ls -lh "$ZIP_FILE"
 
       - name: Extract iOS ZIP
         shell: bash
         run: |
           set -e
 
-          IOS_DIR="$RUNNER_TEMP/ios-project"
+          EXTRACT_DIR="$RUNNER_TEMP/ios-extracted"
 
-          rm -rf "$IOS_DIR"
-          mkdir -p "$IOS_DIR"
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
 
-          echo "=== EXTRACT IOS ZIP ==="
+          echo "=== EXTRACT ZIP ==="
 
-          unzip -q -o "$IOS_ZIP" \
-            -d "$IOS_DIR"
+          unzip -q -o "$IOS_ZIP" -d "$EXTRACT_DIR"
 
-          echo "=== ZIP EXTRACTED ==="
+          echo "=== ZIP CONTENT ==="
 
-      - name: Find Xcode project
+          find "$EXTRACT_DIR" \
+            -maxdepth 5 \
+            -print
+
+      - name: Check ZIP for Xcode project
         shell: bash
         run: |
           set -e
 
           echo "=== SEARCH XCODE PROJECT ==="
 
-          XCODEPROJ=$(find "$RUNNER_TEMP/ios-project" \
+          XCODEPROJ=$(find "$RUNNER_TEMP/ios-extracted" \
             -type d \
             -name "*.xcodeproj" \
-            -print \
-            | head -1)
+            -print -quit)
 
           if [ -z "$XCODEPROJ" ]; then
-            echo "ERROR: NO XCODE PROJECT FOUND"
-
+            echo "NO XCODE PROJECT FOUND"
             echo
-            echo "PROJECT.PBXPROJ FILES:"
+            echo "Searching for project.pbxproj..."
 
-            find "$RUNNER_TEMP/ios-project" \
+            PBXPROJ=$(find "$RUNNER_TEMP/ios-extracted" \
               -type f \
               -name "project.pbxproj" \
-              -print \
-              | head -20
+              -print -quit)
+
+            if [ -n "$PBXPROJ" ]; then
+              echo "project.pbxproj FOUND:"
+              echo "$PBXPROJ"
+            else
+              echo "project.pbxproj NOT FOUND"
+            fi
 
             echo
-            echo "XCODE WORKSPACES:"
+            echo "Searching for Xcode workspaces..."
 
-            find "$RUNNER_TEMP/ios-project" \
+            find "$RUNNER_TEMP/ios-extracted" \
               -type d \
               -name "*.xcworkspace" \
-              -print \
-              | head -20
+              -print
 
             echo
-            echo "DIRECTORIES NEAR ROOT:"
-
-            find "$RUNNER_TEMP/ios-project" \
+            echo "TOP LEVEL CONTENT:"
+            find "$RUNNER_TEMP/ios-extracted" \
               -maxdepth 3 \
-              -type d \
-              -print \
-              | head -100
+              -print
 
+            echo
+            echo "ERROR: XCODE PROJECT NOT FOUND IN ZIP"
             exit 1
           fi
 
           echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
 
-          echo
           echo "=== XCODE PROJECT FOUND ==="
           echo "$XCODEPROJ"
 
@@ -141,8 +141,11 @@ jobs:
           set -e
 
           echo "=== XCODE VERSION ==="
-
           xcodebuild -version
+
+          echo
+          echo "=== XCODE PROJECT ==="
+          echo "$XCODEPROJ"
 
           echo
           echo "=== PROJECT INFORMATION ==="
@@ -164,22 +167,21 @@ jobs:
 
           echo "$PROJECT_INFO"
 
-          SCHEME=$(echo "$PROJECT_INFO" |
-            awk '
-              /Schemes:/ {
-                found=1
-                next
-              }
+          SCHEME=$(echo "$PROJECT_INFO" | awk '
+            /Schemes:/ {
+              found=1
+              next
+            }
 
-              found && NF {
-                gsub(/^[ \t]+|[ \t]+$/, "")
-                print
-                exit
-              }
-            ')
+            found && NF {
+              gsub(/^[ \t]+|[ \t]+$/, "")
+              print
+              exit
+            }
+          ')
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: NO SCHEME FOUND"
+            echo "ERROR: XCODE SCHEME NOT FOUND"
             exit 1
           fi
 
@@ -219,16 +221,18 @@ jobs:
         run: |
           set -e
 
-          echo "=== FIND BUILT APP ==="
+          echo "=== FIND APP ==="
 
           APP=$(find "$RUNNER_TEMP/build" \
             -type d \
             -name "*.app" \
-            -print \
-            | head -1)
+            -print -quit)
 
           if [ -z "$APP" ]; then
             echo "ERROR: APP NOT FOUND"
+
+            echo
+            echo "BUILD DIRECTORY:"
 
             find "$RUNNER_TEMP/build" \
               -maxdepth 8 \
@@ -239,11 +243,10 @@ jobs:
 
           echo "APP=$APP" >> "$GITHUB_ENV"
 
-          echo
           echo "=== APP FOUND ==="
           echo "$APP"
 
-      - name: Create IPA
+      - name: Create unsigned IPA
         shell: bash
         run: |
           set -e
@@ -290,7 +293,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MyBestDeal-4.7-Xcode-Project
-          path: ${{ runner.temp }}/ios-project
+          path: ${{ runner.temp }}/ios-extracted
           if-no-files-found: ignore
 
       - name: Upload build
